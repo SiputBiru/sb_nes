@@ -14,8 +14,12 @@ uint8_t sb_bus_read(sb_bus_t* bus, uint16_t addr) {
       } else {
         // oam dma. controller reads
       }
-    } else {
+    } else if (addr >= 0x8000) {
+      if (bus->prg_rom && bus->prg_rom_size > 0) {
+        bus->last_read = bus->prg_rom[(addr - 0x8000) % bus->prg_rom_size];
+      }
       // bus->last_read = sb_mapper_read(&bus->mapper, bus->prg_rom, addr);
+    } else {
     }
     return bus->last_read;
   }
@@ -26,7 +30,9 @@ uint8_t sb_bus_read(sb_bus_t* bus, uint16_t addr) {
 uint8_t sb_bus_write(sb_bus_t* bus, uint16_t addr, uint8_t val) {
 
   if (addr >= 0x0000 && addr <= 0xFFFF) { // just safe guard
-    if (addr == 0x4014) {
+    if (addr < 0x2000) {
+      bus->wram[addr & 0x07FF] = val;
+    } else if (addr == 0x4014) {
       bus->dma_page = val;
       bus->dma_active = true;
     }

@@ -36,6 +36,14 @@ sb_6502_result_t addr_zero_page_x(sb_6502_t* cpu, sb_bus_t* bus) {
   return r;
 }
 
+sb_6502_result_t addr_zero_page_y(sb_6502_t* cpu, sb_bus_t* bus) {
+  sb_6502_result_t r = { 0 };
+  uint8_t base = sb_bus_read(bus, cpu->pc++);
+  r.addr = (base + cpu->y) & 0x00FF;
+  r.page_crossed = false;
+  return r;
+}
+
 // LDA $8000 (Two byte addr)
 sb_6502_result_t addr_absolute(sb_6502_t* cpu, sb_bus_t* bus) {
   sb_6502_result_t r = { 0 };
