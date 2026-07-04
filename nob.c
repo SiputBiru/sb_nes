@@ -33,6 +33,7 @@ int main(int argc, char** argv) {
     &cmd,
     SRC_FOLDER "sb_6502/sb_6502.c",
     SRC_FOLDER "sb_6502/sb_6502_addrmodes.c",
+    SRC_FOLDER "sb_bus/sb_bus.c",
     TEST_FOLDER "nestest/test_nestest.c"
   );
   if (!nob_cmd_run(&cmd))
