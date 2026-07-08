@@ -22,6 +22,7 @@ static int build_nestest(void)
     SRC_FOLDER "sb_6502/sb_6502.c",
     SRC_FOLDER "sb_6502/sb_6502_addrmodes.c",
     SRC_FOLDER "sb_bus/sb_bus.c",
+    SRC_FOLDER "sb_cartridge/sb_cartridge.c",
     TEST_FOLDER "nestest/test_nestest.c"
   );
   if (!nob_cmd_run(&cmd)) return 1;
@@ -73,7 +74,7 @@ int main(int argc, char** argv)
     return 0;
   }
 
-  // Default: build nestest (existing behavior)
+  // Build nestest (exercises CPU + bus + cartridge + sb_nes modules)
   Nob_Cmd cmd = { 0 };
   nob_cc(&cmd);
   nob_cc_flags(&cmd);
@@ -84,6 +85,7 @@ int main(int argc, char** argv)
     SRC_FOLDER "sb_6502/sb_6502.c",
     SRC_FOLDER "sb_6502/sb_6502_addrmodes.c",
     SRC_FOLDER "sb_bus/sb_bus.c",
+    SRC_FOLDER "sb_cartridge/sb_cartridge.c",
     TEST_FOLDER "nestest/test_nestest.c"
   );
   if (!nob_cmd_run(&cmd)) return 1;

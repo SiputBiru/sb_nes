@@ -26,7 +26,7 @@ typedef enum {
     SB_CARTRIDGE_ERR_BAD_FILE,
 } sb_cartridge_result_t;
 
-typedef struct {
+typedef struct sb_cartridge_t {
     // ROM data buffers
     uint8_t  prg_rom[SB_PRG_ROM_MAX];
     size_t   prg_rom_size;
