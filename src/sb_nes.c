@@ -74,20 +74,38 @@ bool sb_nes_load_rom(sb_nes_t* nes, const char* path) {
 }
 
 void sb_nes_frame(sb_nes_t* nes) {
-  // Just run CPU instructions for roughly one frame.
-  // A real NES runs ~29780 CPU cycles per frame (262 scanlines * 341/3).
-  // For now, run a fixed batch so we can see progress.
-  //
-  // later this becomes a proper scanline*dot loop:
-  //   for each scanline (262):
-  //     for each dot (341):
-  //       ppu_tick()
-  //       if (dot % 3 == 2) cpu_tick()
-  //       apu_tick()
+  // Run one NTSC frame: 262 scanlines x 341 dots.
+  // PPU ticks every dot. CPU ticks every 3 PPU dots.
+  // APU ticks every CPU cycle (later).
 
-  for (int i = 0; i < 20000; i++) {
-    sb_6502_step(&nes->cpu, &nes->bus);
+  for (int scanline = 0; scanline < SB_PPU_NTSC_SCANLINES; scanline++) {
+    int dots = SB_PPU_DOTS_PER_SCANLINE;
+
+    // NTSC odd frame: pre-render scanline has 340 dots when rendering enabled.
+    if (
+      scanline == SB_PPU_NTSC_SCANLINES - 1 && nes->ppu.odd_frame &&
+      (nes->ppu.ppumask & (SB_PPUMASK_SHOW_BG | SB_PPUMASK_SHOW_SPR))
+    )
+      dots = SB_PPU_DOTS_PER_SCANLINE - 1;
+
+    for (int dot = 0; dot < dots; dot++) {
+      // PPU ticks every dot.
+      sb_ppu_tick(&nes->ppu);
+
+      // CPU ticks every 3 PPU dots.
+      // Real NES: CPU runs at 1.79 MHz, PPU at 5.37 MHz (3:1 ratio).
+      if (dot % 3 == 1) {
+        // Route PPU NMI to CPU before stepping.
+        if (nes->ppu.nmi_pending) {
+          nes->ppu.nmi_pending = false;
+          sb_6502_nmi(&nes->cpu, &nes->bus);
+        }
+        sb_6502_step(&nes->cpu, &nes->bus);
+      }
+    }
   }
+
+  nes->ppu.odd_frame = !nes->ppu.odd_frame;
 }
 
 void sb_nes_set_buttons(sb_nes_t* nes, uint8_t mask) { nes->controller_mask = mask; }

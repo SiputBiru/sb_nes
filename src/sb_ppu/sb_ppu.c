@@ -80,7 +80,7 @@ void sb_ppu_vram_write(sb_ppu_t* ppu, uint16_t addr, uint8_t val) {
     sb_cartridge_write_chr(ppu->cartridge, addr, val);
 }
 
-// ── PPU Register Read ──
+// PPU Register Read
 
 uint8_t sb_ppu_read(sb_ppu_t* ppu, uint16_t addr) {
   switch (addr & 0x2007) {
@@ -126,7 +126,7 @@ uint8_t sb_ppu_read(sb_ppu_t* ppu, uint16_t addr) {
   }
 }
 
-// ── PPU Register Write ──
+// PPU Register Write
 
 void sb_ppu_write(sb_ppu_t* ppu, uint16_t addr, uint8_t val) {
   switch (addr & 0x2007) {
@@ -186,32 +186,35 @@ void sb_ppu_write(sb_ppu_t* ppu, uint16_t addr, uint8_t val) {
 }
 
 // PPU Tick
-void sb_ppu_tick(sb_ppu_t* ppu) {
-  // later tick is a stub. Full implementation in 3.2.
-  // For now, just advance dot/scanline and handle NMI generation
-  // so games don't hang.
 
+void sb_ppu_tick(sb_ppu_t* ppu) {
   bool rendering =
     (ppu->scanline < SB_PPU_VISIBLE_SCANLINES || ppu->scanline == SB_PPU_NTSC_SCANLINES - 1) &&
-    (ppu->ppumask & (SB_PPUMASK_SHOW_BG | SB_PPUMASK_SHOW_SPR));
+    (ppu->ppumask & (SB_PPUMASK_SHOW_BG | SB_PPUMASK_SHOW_SPR)) != 0;
 
-  // VBlank start (scanline 241, dot 0)
+  // Background and sprite rendering happen here during visible scanlines.
+  // Implemented later
+
+  // VBlank start at scanline 241, dot 0.
+  // Sets the VBlank flag in PPUSTATUS and triggers NMI if enabled.
   if (ppu->scanline == SB_PPU_VISIBLE_SCANLINES + 1 && ppu->dot == 0) {
     ppu->ppustatus |= SB_PPUSTATUS_VBLANK;
 
-    // Edge-triggered NMI
-    bool nmi_now = (ppu->ppuctrl & SB_PPUCTRL_NMI) && (ppu->ppustatus & SB_PPUSTATUS_VBLANK);
+    // Edge-triggered NMI: fires when PPUCTRL NMI enable AND VBlank
+    // are both set on the rising edge.
+    bool nmi_now =
+      (ppu->ppuctrl & SB_PPUCTRL_NMI) != 0 && (ppu->ppustatus & SB_PPUSTATUS_VBLANK) != 0;
     if (nmi_now && !ppu->nmi_previous)
       ppu->nmi_pending = true;
     ppu->nmi_previous = nmi_now;
   }
 
-  // Pre-render scanline: clear VBlank, sprite 0 hit, overflow
+  // Pre-render scanline (261): clear flags at start.
   if (ppu->scanline == SB_PPU_NTSC_SCANLINES - 1 && ppu->dot == 0) {
     ppu->ppustatus &= ~(SB_PPUSTATUS_VBLANK | SB_PPUSTATUS_SPRITE0_HIT | SB_PPUSTATUS_OVERFLOW);
   }
 
-  // Pre-render scanline: reload scroll at end
+  // Pre-render scanline: reload scroll registers from temp at end.
   if (
     ppu->scanline == SB_PPU_NTSC_SCANLINES - 1 && ppu->dot == SB_PPU_DOTS_PER_SCANLINE - 1 &&
     rendering
@@ -219,15 +222,16 @@ void sb_ppu_tick(sb_ppu_t* ppu) {
     ppu->v = ppu->t;
   }
 
-  // Handle OAM DMA
-  if (ppu->dma_active) {
-    // DMA takes ~513 cycles (1 dummy + 256 reads + 256 writes)
-    // Simplified: just copy now, timing handled in sb_nes_frame
-  }
-
-  // Advance dot
+  // Advance dot.
   ppu->dot++;
-  if (ppu->dot >= SB_PPU_DOTS_PER_SCANLINE) {
+
+  // NTSC odd frame quirk: pre-render scanline runs 340 dots instead of 341
+  // when rendering is enabled on odd frames.
+  int max_dot = SB_PPU_DOTS_PER_SCANLINE;
+  if (ppu->scanline == SB_PPU_NTSC_SCANLINES - 1 && ppu->odd_frame && rendering)
+    max_dot = SB_PPU_DOTS_PER_SCANLINE - 1;
+
+  if (ppu->dot >= max_dot) {
     ppu->dot = 0;
     ppu->scanline++;
 
