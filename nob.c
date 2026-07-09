@@ -6,89 +6,156 @@
 #define TEST_FOLDER "test/"
 
 // Common flags (no -Wconversion — too noisy for C99 integer promotion)
-#define CFLAGS "-std=c99", "-Wall", "-Wextra", "-Wpedantic", "-Wshadow", \
-               "-fsanitize=address", "-fsanitize=undefined", \
-               "-g", "-O0"
+#define CFLAGS \
+  "-std=c99", "-Wall", "-Wextra", "-Wpedantic", "-Wshadow", "-fsanitize=address", \
+    "-fsanitize=undefined", "-g", "-O0"
 
-static int build_nestest(void)
-{
-  Nob_Cmd cmd = { 0 };
-  nob_cc(&cmd);
-  nob_cc_flags(&cmd);
-  nob_cmd_append(&cmd, CFLAGS);
-  nob_cc_output(&cmd, BUILD_FOLDER "test_nestest");
-  nob_cc_inputs(
-    &cmd,
-    SRC_FOLDER "sb_6502/sb_6502.c",
-    SRC_FOLDER "sb_6502/sb_6502_addrmodes.c",
-    SRC_FOLDER "sb_bus/sb_bus.c",
-    SRC_FOLDER "sb_cartridge/sb_cartridge.c",
-    TEST_FOLDER "nestest/test_nestest.c"
-  );
-  if (!nob_cmd_run(&cmd)) return 1;
+// All core source files needed to link a test binary
+#define CORE_SOURCES \
+  SRC_FOLDER "sb_6502/sb_6502.c", SRC_FOLDER "sb_6502/sb_6502_addrmodes.c", \
+    SRC_FOLDER "sb_bus/sb_bus.c", SRC_FOLDER "sb_cartridge/sb_cartridge.c", SRC_FOLDER "sb_nes.c"
+
+static int build_and_run(Nob_Cmd* cmd, const char* output) {
+  // Build: insert compiler and flags at the front
+  Nob_Cmd front = { 0 };
+  nob_cc(&front);
+  nob_cc_flags(&front);
+  nob_cmd_append(&front, CFLAGS);
+  nob_cc_output(&front, output);
+  // Append existing inputs from cmd
+  for (int i = 0; i < cmd->count; i++)
+    nob_cmd_append(&front, cmd->items[i]);
+  *cmd = front;
+
+  if (!nob_cmd_run(cmd))
+    return 1;
 
   Nob_Cmd run = { 0 };
-  nob_cmd_append(&run, BUILD_FOLDER "test_nestest");
-  if (!nob_cmd_run(&run)) return 1;
+  nob_cmd_append(&run, output);
+  if (!nob_cmd_run(&run))
+    return 1;
+  return 0;
+}
+
+static int build_nestest(void) {
+  Nob_Cmd cmd = { 0 };
+  nob_cmd_append(&cmd, CORE_SOURCES);
+  nob_cmd_append(&cmd, TEST_FOLDER "nestest/test_nestest.c");
+  return build_and_run(&cmd, BUILD_FOLDER "test_nestest");
+}
+
+static int build_cartridge_test(void) {
+  Nob_Cmd cmd = { 0 };
+  nob_cmd_append(&cmd, SRC_FOLDER "sb_cartridge/sb_cartridge.c");
+  nob_cmd_append(&cmd, TEST_FOLDER "cartridge/test_cartridge.c");
+  return build_and_run(&cmd, BUILD_FOLDER "test_cartridge");
+}
+
+static int build_blargg_test(const char* test_name, const char* test_file) {
+  Nob_Cmd cmd = { 0 };
+  nob_cmd_append(&cmd, CORE_SOURCES);
+  nob_cmd_append(&cmd, TEST_FOLDER "blargg/blargg_runner.c");
+  nob_cmd_append(&cmd, test_file);
+
+  char output[256];
+  snprintf(output, sizeof(output), BUILD_FOLDER "%s", test_name);
+  return build_and_run(&cmd, output);
+}
+
+static int build_branch_timing(void) {
+  return build_blargg_test("test_branch_timing", TEST_FOLDER "blargg/test_branch_timing.c");
+}
+
+static int build_cpu_timing(void) {
+  return build_blargg_test("test_cpu_timing", TEST_FOLDER "blargg/test_cpu_timing.c");
+}
+
+static int build_cpu_interrupts(void) {
+  return build_blargg_test("test_cpu_interrupts", TEST_FOLDER "blargg/test_cpu_interrupts.c");
+}
+
+static int build_instr_v5(void) {
+  return build_blargg_test("test_instr_v5", TEST_FOLDER "blargg/test_instr_v5.c");
+}
+
+static int build_all_blargg(void) {
+  printf("Branch Timing Tests:\n");
+  if (build_branch_timing())
+    return 1;
+
+  printf("\nCPU Timing Tests:\n");
+  if (build_cpu_timing())
+    return 1;
+
+  printf("\nCPU Interrupt Tests:\n");
+  if (build_cpu_interrupts())
+    return 1;
+
+  printf("\ninstr_test-v5:\n");
+  if (build_instr_v5())
+    return 1;
 
   return 0;
 }
 
-static int build_cartridge_test(void)
-{
-  Nob_Cmd cmd = { 0 };
-  nob_cc(&cmd);
-  nob_cc_flags(&cmd);
-  nob_cmd_append(&cmd, CFLAGS);
-  nob_cc_output(&cmd, BUILD_FOLDER "test_cartridge");
-  nob_cc_inputs(
-    &cmd,
-    SRC_FOLDER "sb_cartridge/sb_cartridge.c",
-    TEST_FOLDER "cartridge/test_cartridge.c"
-  );
-  if (!nob_cmd_run(&cmd)) return 1;
-
-  Nob_Cmd run = { 0 };
-  nob_cmd_append(&run, BUILD_FOLDER "test_cartridge");
-  if (!nob_cmd_run(&run)) return 1;
-
-  return 0;
-}
-
-int main(int argc, char** argv)
-{
+int main(int argc, char** argv) {
   NOB_GO_REBUILD_URSELF(argc, argv);
 
   if (!nob_mkdir_if_not_exists(BUILD_FOLDER))
     return 1;
 
-  int run_tests = (argc > 1 && strcmp(argv[1], "test") == 0);
+  if (argc > 1) {
+    if (strcmp(argv[1], "test") == 0) {
+      printf("Cartridge Loader Tests:\n");
+      if (build_cartridge_test())
+        return 1;
 
-  if (run_tests) {
-    printf("=== Cartridge Loader Tests ===\n");
-    if (build_cartridge_test()) return 1;
+      printf("\nnestest CPU Tests:\n");
+      if (build_nestest())
+        return 1;
 
-    printf("\n=== nestest CPU Tests ===\n");
-    if (build_nestest()) return 1;
+      return 0;
+    }
 
-    return 0;
+    if (strcmp(argv[1], "test-all") == 0) {
+      if (build_all_blargg())
+        return 1;
+      return 0;
+    }
+
+    if (strcmp(argv[1], "test-branch-timing") == 0) {
+      if (build_branch_timing())
+        return 1;
+      return 0;
+    }
+
+    if (strcmp(argv[1], "test-cpu-timing") == 0) {
+      if (build_cpu_timing())
+        return 1;
+      return 0;
+    }
+
+    if (strcmp(argv[1], "test-cpu-interrupts") == 0) {
+      if (build_cpu_interrupts())
+        return 1;
+      return 0;
+    }
+
+    if (strcmp(argv[1], "test-instr-v5") == 0) {
+      if (build_instr_v5())
+        return 1;
+      return 0;
+    }
   }
 
-  // Build nestest (exercises CPU + bus + cartridge + sb_nes modules)
-  Nob_Cmd cmd = { 0 };
-  nob_cc(&cmd);
-  nob_cc_flags(&cmd);
-  nob_cmd_append(&cmd, CFLAGS);
-  nob_cc_output(&cmd, BUILD_FOLDER "test_nestest");
-  nob_cc_inputs(
-    &cmd,
-    SRC_FOLDER "sb_6502/sb_6502.c",
-    SRC_FOLDER "sb_6502/sb_6502_addrmodes.c",
-    SRC_FOLDER "sb_bus/sb_bus.c",
-    SRC_FOLDER "sb_cartridge/sb_cartridge.c",
-    TEST_FOLDER "nestest/test_nestest.c"
-  );
-  if (!nob_cmd_run(&cmd)) return 1;
+  // Default: build all tests
+  printf("Cartridge Loader Tests:\n");
+  if (build_cartridge_test())
+    return 1;
+
+  printf("\nnestest CPU Tests:\n");
+  if (build_nestest())
+    return 1;
 
   return 0;
 }
