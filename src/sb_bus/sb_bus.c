@@ -1,5 +1,6 @@
 #include "sb_bus.h"
 #include "../sb_cartridge/sb_cartridge.h"
+#include "../sb_ppu/sb_ppu.h"
 
 uint8_t sb_bus_read(sb_bus_t* bus, uint16_t addr) {
   // Dispatch based on high 3 bits of address (8KB regions)
@@ -11,9 +12,10 @@ uint8_t sb_bus_read(sb_bus_t* bus, uint16_t addr) {
 
   case 2: // $2000-$3FFF: PPU registers (mirrored every 8)
   case 3:
-    // bus->last_read = sb_ppu_read(bus->ppu, addr & 0x2007);
-    // Phase 2: placeholder — no PPU yet
-    bus->last_read = 0;
+    if (bus->ppu)
+      bus->last_read = sb_ppu_read(bus->ppu, addr);
+    else
+      bus->last_read = 0;
     break;
 
   case 4: // $4000-$5FFF: APU + I/O registers
@@ -49,16 +51,16 @@ uint8_t sb_bus_write(sb_bus_t* bus, uint16_t addr, uint8_t val) {
 
   case 2: // $2000-$3FFF: PPU registers
   case 3:
-    // sb_ppu_write(bus->ppu, addr & 0x2007, val);
+    if (bus->ppu)
+      sb_ppu_write(bus->ppu, addr, val);
     break;
 
   case 4: // $4000-$5FFF: APU + I/O
     if (addr == 0x4014) {
       // OAM DMA trigger
-      bus->dma_page = val;
-      bus->dma_active = true;
+      if (bus->ppu)
+        sb_ppu_oam_dma_start(bus->ppu, val);
     }
-    // else: APU registers (Phase 4)
     break;
 
   default: // $6000-$FFFF: Cartridge

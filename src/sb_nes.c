@@ -1,12 +1,17 @@
 #include "sb_nes.h"
 #include <stdio.h>
 #include <string.h>
-
 void sb_nes_init(sb_nes_t* nes) {
   memset(nes, 0, sizeof(*nes));
 
   // Wire the cartridge into the bus
   nes->bus.cartridge = &nes->cartridge;
+
+  // Wire the PPU into the bus
+  nes->bus.ppu = &nes->ppu;
+
+  // Init PPU with cartridge reference (for CHR reads)
+  sb_ppu_init(&nes->ppu, &nes->cartridge);
 
   // Init opcode dispatch table
   sb_6502_init_opcodes();
@@ -69,11 +74,11 @@ bool sb_nes_load_rom(sb_nes_t* nes, const char* path) {
 }
 
 void sb_nes_frame(sb_nes_t* nes) {
-  // Phase 2: just run CPU instructions for roughly one frame.
+  // Just run CPU instructions for roughly one frame.
   // A real NES runs ~29780 CPU cycles per frame (262 scanlines * 341/3).
   // For now, run a fixed batch so we can see progress.
   //
-  // In Phase 3 this becomes a proper scanline*dot loop:
+  // later this becomes a proper scanline*dot loop:
   //   for each scanline (262):
   //     for each dot (341):
   //       ppu_tick()
