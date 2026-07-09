@@ -7,20 +7,26 @@
 
 // Common flags (no -Wconversion — too noisy for C99 integer promotion)
 #define CFLAGS \
-  "-std=c99", "-Wall", "-Wextra", "-Wpedantic", "-Wshadow", "-fsanitize=address", \
-    "-fsanitize=undefined", "-g", "-O0"
+  "-std=c99", "-Wall", "-Wextra", "-Wpedantic", "-Wshadow", "-g", "-O0"
+
+// Flags for test builds (include sanitizers — no SDL linked here)
+#define CFLAGS_TEST \
+  "-std=c99", "-Wall", "-Wextra", "-Wpedantic", "-Wshadow", \
+    "-fsanitize=address", "-fsanitize=undefined", "-g", "-O0"
 
 // All core source files needed to link a test binary
 #define CORE_SOURCES \
   SRC_FOLDER "sb_6502/sb_6502.c", SRC_FOLDER "sb_6502/sb_6502_addrmodes.c", \
     SRC_FOLDER "sb_bus/sb_bus.c", SRC_FOLDER "sb_cartridge/sb_cartridge.c", SRC_FOLDER "sb_nes.c"
 
-static int build_and_run(Nob_Cmd* cmd, const char* output) {
-  // Build: insert compiler and flags at the front
+static int build_and_run(Nob_Cmd* cmd, const char* output, const char* extra_flags) {
+  // Build: insert compiler, flags, and extra flags at the front
   Nob_Cmd front = { 0 };
   nob_cc(&front);
   nob_cc_flags(&front);
-  nob_cmd_append(&front, CFLAGS);
+  nob_cmd_append(&front, CFLAGS_TEST);
+  if (extra_flags)
+    nob_cmd_append(&front, extra_flags);
   nob_cc_output(&front, output);
   // Append existing inputs from cmd
   for (int i = 0; i < cmd->count; i++)
@@ -41,14 +47,14 @@ static int build_nestest(void) {
   Nob_Cmd cmd = { 0 };
   nob_cmd_append(&cmd, CORE_SOURCES);
   nob_cmd_append(&cmd, TEST_FOLDER "nestest/test_nestest.c");
-  return build_and_run(&cmd, BUILD_FOLDER "test_nestest");
+  return build_and_run(&cmd, BUILD_FOLDER "test_nestest", NULL);
 }
 
 static int build_cartridge_test(void) {
   Nob_Cmd cmd = { 0 };
   nob_cmd_append(&cmd, SRC_FOLDER "sb_cartridge/sb_cartridge.c");
   nob_cmd_append(&cmd, TEST_FOLDER "cartridge/test_cartridge.c");
-  return build_and_run(&cmd, BUILD_FOLDER "test_cartridge");
+  return build_and_run(&cmd, BUILD_FOLDER "test_cartridge", NULL);
 }
 
 static int build_blargg_test(const char* test_name, const char* test_file) {
@@ -59,7 +65,7 @@ static int build_blargg_test(const char* test_name, const char* test_file) {
 
   char output[256];
   snprintf(output, sizeof(output), BUILD_FOLDER "%s", test_name);
-  return build_and_run(&cmd, output);
+  return build_and_run(&cmd, output, NULL);
 }
 
 static int build_emulator(void) {
@@ -68,7 +74,6 @@ static int build_emulator(void) {
   nob_cmd_append(&cmd, SRC_FOLDER "sb_frontend/sb_frontend.c");
   nob_cmd_append(&cmd, "sb_main.c");
 
-  // Build: insert compiler, flags, and SDL3 flags at the front
   Nob_Cmd front = { 0 };
   nob_cc(&front);
   nob_cc_flags(&front);
