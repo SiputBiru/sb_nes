@@ -62,6 +62,28 @@ static int build_blargg_test(const char* test_name, const char* test_file) {
   return build_and_run(&cmd, output);
 }
 
+static int build_emulator(void) {
+  Nob_Cmd cmd = { 0 };
+  nob_cmd_append(&cmd, CORE_SOURCES);
+  nob_cmd_append(&cmd, SRC_FOLDER "sb_frontend/sb_frontend.c");
+  nob_cmd_append(&cmd, "sb_main.c");
+
+  // Build: insert compiler, flags, and SDL3 flags at the front
+  Nob_Cmd front = { 0 };
+  nob_cc(&front);
+  nob_cc_flags(&front);
+  nob_cmd_append(&front, CFLAGS);
+  nob_cmd_append(&front, "-I/usr/include/SDL3", "-lSDL3");
+  nob_cc_output(&front, BUILD_FOLDER "sb_nes");
+  for (int i = 0; i < cmd.count; i++)
+    nob_cmd_append(&front, cmd.items[i]);
+  cmd = front;
+
+  if (!nob_cmd_run(&cmd))
+    return 1;
+  return 0;
+}
+
 static int build_branch_timing(void) {
   return build_blargg_test("test_branch_timing", TEST_FOLDER "blargg/test_branch_timing.c");
 }
@@ -148,14 +170,6 @@ int main(int argc, char** argv) {
     }
   }
 
-  // Default: build all tests
-  printf("Cartridge Loader Tests:\n");
-  if (build_cartridge_test())
-    return 1;
-
-  printf("\nnestest CPU Tests:\n");
-  if (build_nestest())
-    return 1;
-
-  return 0;
+  // Default: build the emulator
+  return build_emulator();
 }
