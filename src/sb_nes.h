@@ -1,19 +1,19 @@
 #ifndef SB_NES_H
 #define SB_NES_H
 
-#include <stdint.h>
-#include <stdbool.h>
 #include "sb_6502/sb_6502.h"
 #include "sb_bus/sb_bus.h"
 #include "sb_cartridge/sb_cartridge.h"
+#include <stdbool.h>
+#include <stdint.h>
 
 typedef struct {
-    sb_6502_t      cpu;
-    sb_bus_t       bus;
-    sb_cartridge_t cartridge;
+  sb_6502_t cpu;
+  sb_bus_t bus;
+  sb_cartridge_t cartridge;
 
-    // Controller state (Phase 2: direct read)
-    uint8_t controller_mask;
+  // Controller state (Phase 2: direct read)
+  uint8_t controller_mask;
 } sb_nes_t;
 
 // Initialize all components, wire pointers, init opcode table
