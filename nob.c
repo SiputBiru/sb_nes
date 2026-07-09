@@ -6,18 +6,18 @@
 #define TEST_FOLDER "test/"
 
 // Common flags (no -Wconversion — too noisy for C99 integer promotion)
-#define CFLAGS \
-  "-std=c99", "-Wall", "-Wextra", "-Wpedantic", "-Wshadow", "-g", "-O0"
+#define CFLAGS "-std=c99", "-Wall", "-Wextra", "-Wpedantic", "-Wshadow", "-g", "-O0"
 
 // Flags for test builds (include sanitizers — no SDL linked here)
 #define CFLAGS_TEST \
-  "-std=c99", "-Wall", "-Wextra", "-Wpedantic", "-Wshadow", \
-    "-fsanitize=address", "-fsanitize=undefined", "-g", "-O0"
+  "-std=c99", "-Wall", "-Wextra", "-Wpedantic", "-Wshadow", "-fsanitize=address", \
+    "-fsanitize=undefined", "-g", "-O0"
 
 // All core source files needed to link a test binary
 #define CORE_SOURCES \
   SRC_FOLDER "sb_6502/sb_6502.c", SRC_FOLDER "sb_6502/sb_6502_addrmodes.c", \
-    SRC_FOLDER "sb_bus/sb_bus.c", SRC_FOLDER "sb_cartridge/sb_cartridge.c", SRC_FOLDER "sb_nes.c"
+    SRC_FOLDER "sb_bus/sb_bus.c", SRC_FOLDER "sb_cartridge/sb_cartridge.c", SRC_FOLDER "sb_nes.c", \
+    SRC_FOLDER "sb_ppu/sb_ppu.c"
 
 static int build_and_run(Nob_Cmd* cmd, const char* output, const char* extra_flags) {
   // Build: insert compiler, flags, and extra flags at the front
@@ -78,7 +78,8 @@ static int build_emulator(void) {
   nob_cc(&front);
   nob_cc_flags(&front);
   nob_cmd_append(&front, CFLAGS);
-  nob_cmd_append(&front, "-I/usr/include/SDL3", "-lSDL3");
+  // nob_cmd_append(&front, "-I/usr/include/SDL3", "-lSDL3");
+  nob_cmd_append(&front, "-lSDL3");
   nob_cc_output(&front, BUILD_FOLDER "sb_nes");
   for (int i = 0; i < cmd.count; i++)
     nob_cmd_append(&front, cmd.items[i]);
@@ -132,20 +133,23 @@ int main(int argc, char** argv) {
     return 1;
 
   if (argc > 1) {
-    if (strcmp(argv[1], "test") == 0) {
-      printf("Cartridge Loader Tests:\n");
-      if (build_cartridge_test())
-        return 1;
-
-      printf("\nnestest CPU Tests:\n");
-      if (build_nestest())
-        return 1;
-
-      return 0;
-    }
 
     if (strcmp(argv[1], "test-all") == 0) {
       if (build_all_blargg())
+        return 1;
+      return 0;
+    }
+
+    if (strcmp(argv[1], "nestest") == 0) {
+      printf("\nnestest CPU Tests:\n");
+      if (build_nestest())
+        return 1;
+      return 0;
+    }
+
+    if (strcmp(argv[1], "test-cartridge") == 0) {
+      printf("Cartridge Loader Tests:\n");
+      if (build_cartridge_test())
         return 1;
       return 0;
     }
