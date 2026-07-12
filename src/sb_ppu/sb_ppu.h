@@ -61,7 +61,9 @@ typedef struct sb_ppu_t {
   // Memory
   uint8_t vram[2048];  // 2 KB nametable VRAM
   uint8_t palette[32]; // Palette RAM ($3F00-$3F1F)
-  uint8_t oam[256];    // Object Attribute Memory
+  uint8_t oam[256];    // Object Attribute Memory (64 sprites x 4 bytes)
+  uint8_t oam_cache[8];    // Sprite indices on current scanline (max 8)
+  uint8_t oam_cache_len;   // Number of sprites on current scanline
 
   // Frame buffer (256x240, palette indices)
   uint8_t framebuffer[SB_PPU_FB_WIDTH * SB_PPU_FB_HEIGHT];

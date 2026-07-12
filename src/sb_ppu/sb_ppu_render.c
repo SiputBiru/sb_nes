@@ -1,52 +1,162 @@
 #include "sb_ppu.h"
 
+// Evaluate which sprites are visible on the current scanline.
+// Stores up to 8 sprite indices in ppu->oam_cache.
+static void evaluate_sprites(sb_ppu_t* ppu) {
+  ppu->oam_cache_len = 0;
+  int sprite_height = (ppu->ppuctrl & SB_PPUCTRL_SPRITE_SIZE) ? 16 : 8;
+
+  for (int i = 0; i < 64; i++) {
+    int oi = i * 4;
+    int y = ppu->oam[oi];
+    // Y position is scanline + 1 (sprite appears at y+1)
+    if (ppu->scanline >= y && ppu->scanline < y + sprite_height) {
+      if (ppu->oam_cache_len < 8) {
+        ppu->oam_cache[ppu->oam_cache_len++] = (uint8_t)i;
+      } else {
+        ppu->ppustatus |= SB_PPUSTATUS_OVERFLOW;
+      }
+    }
+  }
+}
+
 void sb_ppu_render_scanline(sb_ppu_t* ppu) {
   if (ppu->scanline >= SB_PPU_VISIBLE_SCANLINES)
     return;
-  if (!(ppu->ppumask & SB_PPUMASK_SHOW_BG))
+
+  bool bg_enabled = (ppu->ppumask & SB_PPUMASK_SHOW_BG) != 0;
+  bool spr_enabled = (ppu->ppumask & SB_PPUMASK_SHOW_SPR) != 0;
+
+  // --- Background Rendering ---
+  if (bg_enabled) {
+    int fine_y = (ppu->scanline & 7);
+    int tile_row = ppu->scanline >> 3;
+    bool show_left = (ppu->ppumask & SB_PPUMASK_SHOW_BG_LEFT) != 0;
+
+    uint16_t nt_base = 0x2000 | ((ppu->t >> 10) & 0x03) * 0x400;
+    uint16_t pt_base = (ppu->ppuctrl & SB_PPUCTRL_BG_PT) ? 0x1000 : 0;
+
+    for (int tile_col = 0; tile_col < 32; tile_col++) {
+      uint16_t tile_addr = nt_base + tile_row * 32 + tile_col;
+      uint8_t tile_index = sb_ppu_vram_read(ppu, tile_addr);
+
+      uint16_t attr_addr = nt_base + 0x03C0 +
+                           (tile_row / 4) * 8 + (tile_col / 4);
+      uint8_t attr = sb_ppu_vram_read(ppu, attr_addr);
+
+      int shift = ((tile_col % 4) / 2) * 2 + ((tile_row % 4) / 2) * 4;
+      uint8_t palette_id = (attr >> shift) & 0x03;
+
+      uint16_t pattern_addr = pt_base + (uint16_t)tile_index * 16 + fine_y;
+      uint8_t low = sb_ppu_vram_read(ppu, pattern_addr);
+      uint8_t high = sb_ppu_vram_read(ppu, pattern_addr + 8);
+
+      for (int pixel = 0; pixel < 8; pixel++) {
+        int screen_x = tile_col * 8 + pixel;
+
+        if (screen_x < 8 && !show_left)
+          continue;
+        if (screen_x >= 256)
+          continue;
+
+        int bit = 7 - pixel;
+        uint8_t color = ((high >> bit) & 1) << 1 | ((low >> bit) & 1);
+
+        int fb_index = ppu->scanline * 256 + screen_x;
+
+        if (color != 0) {
+          uint8_t entry = palette_id * 4 + color;
+          ppu->framebuffer[fb_index] = ppu->palette[entry];
+        } else {
+          ppu->framebuffer[fb_index] = ppu->palette[0];
+        }
+      }
+    }
+  } else {
+    // Background disabled: fill scanline with backdrop color
+    for (int x = 0; x < 256; x++) {
+      ppu->framebuffer[ppu->scanline * 256 + x] = ppu->palette[0];
+    }
+  }
+
+  // --- Sprite Evaluation ---
+  if (!spr_enabled)
     return;
 
-  int fine_y = (ppu->scanline & 7);
-  int tile_row = ppu->scanline >> 3;
-  bool show_left = (ppu->ppumask & SB_PPUMASK_SHOW_BG_LEFT) != 0;
+  evaluate_sprites(ppu);
+  if (ppu->oam_cache_len == 0)
+    return;
 
-  uint16_t nt_base = 0x2000 | ((ppu->t >> 10) & 0x03) * 0x400;
-  uint16_t pt_base = (ppu->ppuctrl & SB_PPUCTRL_BG_PT) ? 0x1000 : 0;
+  int sprite_height = (ppu->ppuctrl & SB_PPUCTRL_SPRITE_SIZE) ? 16 : 8;
+  uint16_t spr_pt_base = (ppu->ppuctrl & SB_PPUCTRL_SPRITE_PT) ? 0x1000 : 0;
+  bool show_left = (ppu->ppumask & SB_PPUMASK_SHOW_SPR_LEFT) != 0;
 
-  for (int tile_col = 0; tile_col < 32; tile_col++) {
-    uint16_t tile_addr = nt_base + tile_row * 32 + tile_col;
-    uint8_t tile_index = sb_ppu_vram_read(ppu, tile_addr);
+  // --- Sprite Rendering ---
+  // Sprites are rendered in OAM order (lower index = higher priority).
+  // For each pixel, the first (lowest-index) non-transparent sprite wins.
+  for (int c = 0; c < ppu->oam_cache_len; c++) {
+    int si = ppu->oam_cache[c];
+    int oi = si * 4;
 
-    uint16_t attr_addr = nt_base + 0x03C0 +
-                         (tile_row / 4) * 8 + (tile_col / 4);
-    uint8_t attr = sb_ppu_vram_read(ppu, attr_addr);
+    int y = ppu->oam[oi];
+    uint8_t tile_index = ppu->oam[oi + 1];
+    uint8_t attr = ppu->oam[oi + 2];
+    int x = ppu->oam[oi + 3];
 
-    int shift = ((tile_col % 4) / 2) * 2 + ((tile_row % 4) / 2) * 4;
-    uint8_t palette_id = (attr >> shift) & 0x03;
+    bool vflip = (attr & 0x80) != 0;
+    bool hflip = (attr & 0x40) != 0;
+    bool behind_bg = (attr & 0x20) != 0;
+    uint8_t palette_id = attr & 0x03;
 
-    uint16_t pattern_addr = pt_base + (uint16_t)tile_index * 16 + fine_y;
+    uint16_t pt_base = spr_pt_base;
+
+    // 8x16 sprite mode: tile_index bit 0 selects pattern table
+    if (sprite_height == 16) {
+      pt_base = (tile_index & 1) ? 0x1000 : 0;
+      tile_index &= 0xFE;
+    }
+
+    int sprite_row = ppu->scanline - y;
+    if (vflip)
+      sprite_row = sprite_height - 1 - sprite_row;
+
+    int tile_row_in_sprite = (sprite_height == 16 && sprite_row >= 8) ? 1 : 0;
+    int fine_y = sprite_row & 7;
+    uint16_t pattern_addr = pt_base + (uint16_t)(tile_index + tile_row_in_sprite) * 16 + fine_y;
+
     uint8_t low = sb_ppu_vram_read(ppu, pattern_addr);
     uint8_t high = sb_ppu_vram_read(ppu, pattern_addr + 8);
 
     for (int pixel = 0; pixel < 8; pixel++) {
-      int screen_x = tile_col * 8 + pixel;
+      int screen_x = x + pixel;
 
       if (screen_x < 8 && !show_left)
         continue;
       if (screen_x >= 256)
         continue;
 
-      int bit = 7 - pixel;
+      int bit = hflip ? pixel : 7 - pixel;
       uint8_t color = ((high >> bit) & 1) << 1 | ((low >> bit) & 1);
 
-      int fb_index = ppu->scanline * 256 + screen_x;
+      if (color == 0)
+        continue; // transparent sprite pixel
 
-      if (color != 0) {
-        uint8_t entry = palette_id * 4 + color;
-        ppu->framebuffer[fb_index] = ppu->palette[entry];
-      } else {
-        ppu->framebuffer[fb_index] = ppu->palette[0];
+      int fb_index = ppu->scanline * 256 + screen_x;
+      uint8_t bg_color = ppu->framebuffer[fb_index];
+
+      // Sprite 0 hit: non-transparent sprite 0 pixel overlaps non-backdrop bg
+      if (si == 0 && bg_color != ppu->palette[0] &&
+          (ppu->ppumask & SB_PPUMASK_SHOW_BG)) {
+        ppu->ppustatus |= SB_PPUSTATUS_SPRITE0_HIT;
       }
+
+      // Priority: if behind_bg, sprite only shows on transparent bg pixels
+      if (behind_bg && bg_color != ppu->palette[0])
+        continue;
+
+      // Draw sprite pixel using sprite palettes ($3F11-$3F1F)
+      uint8_t entry = 0x10 + palette_id * 4 + color;
+      ppu->framebuffer[fb_index] = ppu->palette[entry];
     }
   }
 }

@@ -17,7 +17,19 @@ uint8_t sb_bus_read(sb_bus_t* bus, uint16_t addr) {
 
   case 2: // $4000-$5FFF: APU + I/O registers
     if (addr < 0x4020) {
-      bus->last_read = 0;
+      // Controller port 1 ($4016)
+      if (addr == 0x4016) {
+        if (bus->controller_index > 7) {
+          // After 8 reads, open bus returns 1
+          bus->last_read = 1;
+        } else {
+          // Return current bit (LSB first: A=bit0, B=bit1, ...)
+          bus->last_read = (bus->controller_bits >> bus->controller_index) & 1;
+          bus->controller_index++;
+        }
+      } else {
+        bus->last_read = 0;
+      }
     } else {
       if (bus->cartridge)
         bus->last_read = sb_cartridge_read(bus->cartridge, addr);
@@ -59,6 +71,11 @@ uint8_t sb_bus_write(sb_bus_t* bus, uint16_t addr, uint8_t val) {
     if (addr == 0x4014) {
       if (bus->ppu)
         sb_ppu_oam_dma_start(bus->ppu, val);
+    } else if (addr == 0x4016) {
+      // Strobe: writing bit0=1 resets read index, bit0=0 allows reading
+      if (val & 0x01) {
+        bus->controller_index = 0;
+      }
     }
     break;
 

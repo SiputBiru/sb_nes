@@ -16,6 +16,9 @@ typedef struct {
 
   // Controller state (still direct read)
   uint8_t controller_mask;
+
+  // Persistent PPU dot counter for CPU cycle timing
+  uint64_t total_dots;
 } sb_nes_t;
 
 // Initialize all components, wire pointers, init opcode table

@@ -3,6 +3,7 @@
 #include <string.h>
 void sb_nes_init(sb_nes_t* nes) {
   memset(nes, 0, sizeof(*nes));
+  nes->total_dots = 0;
 
   // Wire the cartridge into the bus
   nes->bus.cartridge = &nes->cartridge;
@@ -53,6 +54,7 @@ bool sb_nes_load_rom(sb_nes_t* nes, const char* path) {
 
   // Reset the CPU (reads reset vector from cartridge via bus)
   sb_6502_reset(&nes->cpu, &nes->bus);
+  nes->total_dots = 0; // Sync with cpu->cycles = 0
 
   printf("Loaded: %s\n", path);
   printf(
@@ -78,7 +80,9 @@ bool sb_nes_load_rom(sb_nes_t* nes, const char* path) {
 
 void sb_nes_frame(sb_nes_t* nes) {
   // Run one NTSC frame: 262 scanlines x 341 dots.
-  // PPU ticks every dot. CPU ticks every 3 PPU dots (3:1 ratio).
+  // PPU ticks every dot. CPU cycle timing is driven by cpu->cycles:
+  // each instruction consumes N CPU cycles, and each CPU cycle represents
+  // 3 PPU dots. The CPU steps only when enough dots have accumulated.
 
   for (int scanline = 0; scanline < SB_PPU_NTSC_SCANLINES; scanline++) {
     int dots = SB_PPU_DOTS_PER_SCANLINE;
@@ -88,13 +92,29 @@ void sb_nes_frame(sb_nes_t* nes) {
 
     for (int dot = 0; dot < dots; dot++) {
       sb_ppu_tick(&nes->ppu);
+      nes->total_dots++;
 
-      if (dot % 3 == 1) {
+      // CPU runs when enough PPU dots have passed for its accumulated cycles.
+      // Ratio: 1 CPU cycle = 3 PPU dots. When PPU dots exceeds cycles*3,
+      // the CPU is behind and needs to execute the next instruction.
+      if (nes->cpu.cycles * 3 < nes->total_dots) {
         if (nes->ppu.nmi_pending) {
           nes->ppu.nmi_pending = false;
           sb_6502_nmi(&nes->cpu, &nes->bus);
         }
         sb_6502_step(&nes->cpu, &nes->bus);
+      }
+
+      // Process OAM DMA when active
+      if (nes->ppu.dma_active && nes->ppu.dma_offset == 0) {
+        uint8_t page = nes->ppu.dma_page;
+        for (int i = 0; i < 256; i++) {
+          uint16_t src = ((uint16_t)page << 8) | (uint8_t)i;
+          nes->ppu.oam[i] = sb_bus_read(&nes->bus, src);
+        }
+        nes->ppu.dma_active = false;
+        // DMA consumes ~513 CPU cycles = 1539 PPU dots
+        nes->cpu.cycles += 513;
       }
     }
   }
@@ -102,4 +122,17 @@ void sb_nes_frame(sb_nes_t* nes) {
   // (when scanline wraps from 261 back to 0). No toggle needed here.
 }
 
-void sb_nes_set_buttons(sb_nes_t* nes, uint8_t mask) { nes->controller_mask = mask; }
+// Reverse bit order: frontend A=bit7..R=bit0 → NES R=bit7..A=bit0
+static uint8_t reverse_bits(uint8_t b) {
+  b = (b & 0xF0) >> 4 | (b & 0x0F) << 4;
+  b = (b & 0xCC) >> 2 | (b & 0x33) << 2;
+  b = (b & 0xAA) >> 1 | (b & 0x55) << 1;
+  return b;
+}
+
+void sb_nes_set_buttons(sb_nes_t* nes, uint8_t mask) {
+  nes->controller_mask = mask;
+  // Convert from frontend bit order to NES protocol order
+  // Frontend: A=bit7,R=bit0  →  NES: A=bit0,R=bit7
+  nes->bus.controller_bits = reverse_bits(mask);
+}
