@@ -166,15 +166,12 @@ uint8_t sb_ppu_read(sb_ppu_t* ppu, uint16_t addr) {
 void sb_ppu_write(sb_ppu_t* ppu, uint16_t addr, uint8_t val) {
   switch (addr & 0x0007) {
   case 0: // PPUCTRL
-    if (!ppu->warmup) {
-      ppu->ppuctrl = val;
-      ppu->t = (ppu->t & 0xF3FF) | ((uint16_t)(val & 0x03) << 10);
-    }
+    ppu->ppuctrl = val;
+    ppu->t = (ppu->t & 0xF3FF) | ((uint16_t)(val & 0x03) << 10);
     break;
 
   case 1: // PPUMASK
-    if (!ppu->warmup)
-      ppu->ppumask = val;
+    ppu->ppumask = val;
     break;
 
   case 3: // OAMADDR
@@ -199,11 +196,6 @@ void sb_ppu_write(sb_ppu_t* ppu, uint16_t addr, uint8_t val) {
     break;
 
   case 6: // PPUADDR (two writes)
-    if (ppu->warmup) {
-      static int warn = 0;
-      /* warmup blocked - do nothing */
-      break;
-    }
     if (ppu->w == 0) {
       // High byte
       ppu->t = (ppu->t & 0x80FF) | ((uint16_t)(val & 0x3F) << 8);
@@ -230,13 +222,6 @@ void sb_ppu_write(sb_ppu_t* ppu, uint16_t addr, uint8_t val) {
 // PPU Tick
 
 void sb_ppu_tick(sb_ppu_t* ppu) {
-  // PPU warm-up: ~29,658 CPU cycles ≈ 89,000 PPU dots before $2000/$2001/$2006 work.
-  if (ppu->warmup) {
-    ppu->warmup_cycles++;
-    if (ppu->warmup_cycles >= 90000)
-      ppu->warmup = false;
-  }
-
   bool rendering =
     (ppu->scanline < SB_PPU_VISIBLE_SCANLINES || ppu->scanline == SB_PPU_NTSC_SCANLINES - 1) &&
     (ppu->ppumask & (SB_PPUMASK_SHOW_BG | SB_PPUMASK_SHOW_SPR)) != 0;
@@ -293,6 +278,7 @@ void sb_ppu_tick(sb_ppu_t* ppu) {
   // Pre-render scanline (261): clear flags at start.
   if (ppu->scanline == SB_PPU_NTSC_SCANLINES - 1 && ppu->dot == 0) {
     ppu->ppustatus &= ~(SB_PPUSTATUS_VBLANK | SB_PPUSTATUS_SPRITE0_HIT | SB_PPUSTATUS_OVERFLOW);
+    ppu->nmi_previous = false; // VBlank going low resets edge detection
     ppu->vblank_clear_pending = false;
   }
 
@@ -332,8 +318,6 @@ void sb_ppu_init(sb_ppu_t* ppu, sb_cartridge_t* cart) {
   ppu->dot = 0;
   ppu->ppustatus |= SB_PPUSTATUS_VBLANK; // power-up state
   ppu->nmi_previous = (ppu->ppuctrl & SB_PPUCTRL_NMI) != 0;
-  ppu->warmup = true;
-  ppu->warmup_cycles = 0;
 }
 
 // Framebuffer Access

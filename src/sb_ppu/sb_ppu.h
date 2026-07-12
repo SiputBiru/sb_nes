@@ -82,9 +82,6 @@ typedef struct sb_ppu_t {
   uint8_t dma_offset;
   bool dma_dummy;
 
-  // PPU warm-up period (writes to $2000/$2001/$2006 ignored until ready)
-  bool warmup;
-  int  warmup_cycles;
   struct sb_cartridge_t* cartridge;
 } sb_ppu_t;
 
