@@ -1,6 +1,8 @@
 #include "sb_frontend.h"
+#include "../sb_ppu/sb_ppu_palette.h"
 #include <SDL3/SDL.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 // NES Controller Bitmask
 // Matches NES register layout: bit = button pressed
@@ -35,42 +37,26 @@ static uint8_t read_controller(void) {
 }
 
 // Render
+// Converts PPU framebuffer palette indices to RGB and blits via SDL texture.
+
 static void render_frame(SDL_Renderer* renderer, sb_nes_t* nes, int scale) {
-  // Dark background
-  SDL_SetRenderDrawColor(renderer, 0x1A, 0x1A, 0x1A, 0xFF);
+  static SDL_Texture* texture = NULL;
+  static uint32_t pixels[256 * 240];
+
+  if (!texture) {
+    texture = SDL_CreateTexture(
+      renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, 256, 240);
+  }
+
+  uint8_t* fb = sb_ppu_get_framebuffer(&nes->ppu);
+  for (int i = 0; i < 256 * 240; i++)
+    pixels[i] = sb_ppu_palette[fb[i] & 0x3F];
+
+  SDL_UpdateTexture(texture, NULL, pixels, 256 * sizeof(uint32_t));
   SDL_RenderClear(renderer);
 
-  // NES screen area (blue placeholder for now)
-  SDL_FRect screen_rect = {
-    .x = 0,
-    .y = 0,
-    .w = 256.0f * scale,
-    .h = 240.0f * scale,
-  };
-  SDL_SetRenderDrawColor(renderer, 0x10, 0x10, 0x30, 0xFF);
-  SDL_RenderFillRect(renderer, &screen_rect);
-
-  // Draw CPU state as colored bars
-  // TODO: later PPU framebuffer replaces this entirely
-  // Register display (colored rectangles at bottom):
-  // A register bar
-  float bar_w = (float)nes->cpu.a / 255.0f * screen_rect.w;
-  SDL_FRect a_bar = { .x = 0, .y = screen_rect.h - 40, .w = bar_w, .h = 8 };
-  SDL_SetRenderDrawColor(renderer, 0xFF, 0x33, 0x33, 0xFF);
-  SDL_RenderFillRect(renderer, &a_bar);
-
-  // X register bar
-  bar_w = (float)nes->cpu.x / 255.0f * screen_rect.w;
-  SDL_FRect x_bar = { .x = 0, .y = screen_rect.h - 28, .w = bar_w, .h = 8 };
-  SDL_SetRenderDrawColor(renderer, 0x33, 0xFF, 0x33, 0xFF);
-  SDL_RenderFillRect(renderer, &x_bar);
-
-  // Y register bar
-  bar_w = (float)nes->cpu.y / 255.0f * screen_rect.w;
-  SDL_FRect y_bar = { .x = 0, .y = screen_rect.h - 16, .w = bar_w, .h = 8 };
-  SDL_SetRenderDrawColor(renderer, 0x33, 0x33, 0xFF, 0xFF);
-  SDL_RenderFillRect(renderer, &y_bar);
-
+  SDL_FRect dst = { .x = 0, .y = 0, .w = 256.0f * scale, .h = 240.0f * scale };
+  SDL_RenderTexture(renderer, texture, NULL, &dst);
   SDL_RenderPresent(renderer);
 }
 
@@ -102,10 +88,18 @@ int sb_frontend_run(sb_frontend_config_t* config) {
   }
 
   // Init NES
-  sb_nes_t nes;
-  sb_nes_init(&nes);
+  sb_nes_t* nes = calloc(1, sizeof(sb_nes_t));
+  if (!nes) {
+    fprintf(stderr, "Failed to allocate NES state\n");
+    SDL_DestroyRenderer(renderer);
+    SDL_DestroyWindow(window);
+    SDL_Quit();
+    return 1;
+  }
+  sb_nes_init(nes);
 
-  if (!sb_nes_load_rom(&nes, config->rom_path)) {
+  if (!sb_nes_load_rom(nes, config->rom_path)) {
+    free(nes);
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
     SDL_Quit();
@@ -125,19 +119,20 @@ int sb_frontend_run(sb_frontend_config_t* config) {
     }
 
     // Read controller
-    sb_nes_set_buttons(&nes, read_controller());
+    sb_nes_set_buttons(nes, read_controller());
 
     // Run one frame
-    sb_nes_frame(&nes);
+    sb_nes_frame(nes);
 
     // Render
-    render_frame(renderer, &nes, config->window_scale);
+    render_frame(renderer, nes, config->window_scale);
 
     // ~60 FPS cap
     SDL_Delay(16);
   }
 
   // Cleanup
+  free(nes);
   SDL_DestroyRenderer(renderer);
   SDL_DestroyWindow(window);
   SDL_Quit();

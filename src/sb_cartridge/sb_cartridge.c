@@ -18,15 +18,16 @@ sb_cartridge_result_t sb_cartridge_load(sb_cartridge_t* cart, const uint8_t* dat
   uint8_t flags_byte2 = data[7];
   uint8_t prg_ram_units = data[8];
 
-  // Detect NES 2.0: bits 2-3 of flags_byte2 == 0x08
-  if ((flags_byte2 & 0x0C) == 0x08)
-    return SB_CARTRIDGE_ERR_UNSUPPORTED_MAPPER;
-
   // Mapper ID
   uint8_t mapper_id = (flags_byte2 & 0xF0) | (flags_byte1 >> 4);
+  cart->mapper_id = mapper_id;
+
+  // Detect NES 2.0: bits 2-3 of flags_byte2 == 0x08
+  if ((flags_byte2 & 0x0C) == 0x08)
+    return SB_CARTRIDGE_ERR_NES20;
+
   if (mapper_id != 0)
     return SB_CARTRIDGE_ERR_UNSUPPORTED_MAPPER;
-  cart->mapper_id = 0;
 
   // Mirroring
   if (flags_byte1 & 0x08) {

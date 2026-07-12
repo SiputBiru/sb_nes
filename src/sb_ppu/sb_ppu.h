@@ -73,13 +73,18 @@ typedef struct sb_ppu_t {
   bool nmi_previous;
   bool nmi_pending;
 
+  // VBlank read deferral for sync timing
+  bool vblank_clear_pending;
+
   // OAM DMA state
   bool dma_active;
   uint8_t dma_page;
   uint8_t dma_offset;
   bool dma_dummy;
 
-  // Reference to cartridge for CHR reads
+  // PPU warm-up period (writes to $2000/$2001/$2006 ignored until ready)
+  bool warmup;
+  int  warmup_cycles;
   struct sb_cartridge_t* cartridge;
 } sb_ppu_t;
 
@@ -98,6 +103,9 @@ void sb_ppu_oam_dma_start(sb_ppu_t* ppu, uint8_t page);
 
 // Get the framebuffer (palette indices)
 uint8_t* sb_ppu_get_framebuffer(sb_ppu_t* ppu);
+
+// Render one scanline of background (called from tick)
+void sb_ppu_render_scanline(sb_ppu_t* ppu);
 
 // VRAM access (internal helpers, exposed for testing)
 uint8_t sb_ppu_vram_read(sb_ppu_t* ppu, uint16_t addr);

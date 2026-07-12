@@ -17,7 +17,7 @@
 #define CORE_SOURCES \
   SRC_FOLDER "sb_6502/sb_6502.c", SRC_FOLDER "sb_6502/sb_6502_addrmodes.c", \
     SRC_FOLDER "sb_bus/sb_bus.c", SRC_FOLDER "sb_cartridge/sb_cartridge.c", SRC_FOLDER "sb_nes.c", \
-    SRC_FOLDER "sb_ppu/sb_ppu.c"
+    SRC_FOLDER "sb_ppu/sb_ppu.c", SRC_FOLDER "sb_ppu/sb_ppu_render.c"
 
 static int build_and_run(Nob_Cmd* cmd, const char* output, const char* extra_flags) {
   // Build: insert compiler, flags, and extra flags at the front

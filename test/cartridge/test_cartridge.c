@@ -100,8 +100,8 @@ static void test_nes2_rejected(void)
     sb_cartridge_t cart;
     sb_cartridge_result_t r = sb_cartridge_load(&cart, rom, 16 + 16384);
     free(rom);
-    TEST("NES 2.0 format returns ERR_UNSUPPORTED_MAPPER",
-         r == SB_CARTRIDGE_ERR_UNSUPPORTED_MAPPER);
+    TEST("NES 2.0 format returns ERR_NES20",
+         r == SB_CARTRIDGE_ERR_NES20);
 }
 
 // ROM read tests

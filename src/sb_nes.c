@@ -35,6 +35,9 @@ bool sb_nes_load_rom(sb_nes_t* nes, const char* path) {
   case SB_CARTRIDGE_ERR_TOO_LARGE:
     fprintf(stderr, "Error: '%s' is too large (>512KB PRG)\n", path);
     return false;
+  case SB_CARTRIDGE_ERR_NES20:
+    fprintf(stderr, "Error: '%s' is NES 2.0 format (not supported yet)\n", path);
+    return false;
   case SB_CARTRIDGE_ERR_UNSUPPORTED_MAPPER:
     fprintf(
       stderr,
@@ -75,27 +78,18 @@ bool sb_nes_load_rom(sb_nes_t* nes, const char* path) {
 
 void sb_nes_frame(sb_nes_t* nes) {
   // Run one NTSC frame: 262 scanlines x 341 dots.
-  // PPU ticks every dot. CPU ticks every 3 PPU dots.
-  // APU ticks every CPU cycle (later).
+  // PPU ticks every dot. CPU ticks every 3 PPU dots (3:1 ratio).
 
   for (int scanline = 0; scanline < SB_PPU_NTSC_SCANLINES; scanline++) {
     int dots = SB_PPU_DOTS_PER_SCANLINE;
-
-    // NTSC odd frame: pre-render scanline has 340 dots when rendering enabled.
-    if (
-      scanline == SB_PPU_NTSC_SCANLINES - 1 && nes->ppu.odd_frame &&
-      (nes->ppu.ppumask & (SB_PPUMASK_SHOW_BG | SB_PPUMASK_SHOW_SPR))
-    )
+    if (scanline == SB_PPU_NTSC_SCANLINES - 1 && nes->ppu.odd_frame &&
+        (nes->ppu.ppumask & (SB_PPUMASK_SHOW_BG | SB_PPUMASK_SHOW_SPR)))
       dots = SB_PPU_DOTS_PER_SCANLINE - 1;
 
     for (int dot = 0; dot < dots; dot++) {
-      // PPU ticks every dot.
       sb_ppu_tick(&nes->ppu);
 
-      // CPU ticks every 3 PPU dots.
-      // Real NES: CPU runs at 1.79 MHz, PPU at 5.37 MHz (3:1 ratio).
       if (dot % 3 == 1) {
-        // Route PPU NMI to CPU before stepping.
         if (nes->ppu.nmi_pending) {
           nes->ppu.nmi_pending = false;
           sb_6502_nmi(&nes->cpu, &nes->bus);
@@ -104,8 +98,8 @@ void sb_nes_frame(sb_nes_t* nes) {
       }
     }
   }
-
-  nes->ppu.odd_frame = !nes->ppu.odd_frame;
+  // odd_frame is toggled inside sb_ppu_tick() at the natural frame boundary
+  // (when scanline wraps from 261 back to 0). No toggle needed here.
 }
 
 void sb_nes_set_buttons(sb_nes_t* nes, uint8_t mask) { nes->controller_mask = mask; }
