@@ -3,7 +3,6 @@
 #include <string.h>
 void sb_nes_init(sb_nes_t* nes) {
   memset(nes, 0, sizeof(*nes));
-  nes->total_dots = 0;
 
   // Wire the cartridge into the bus
   nes->bus.cartridge = &nes->cartridge;
@@ -54,7 +53,6 @@ bool sb_nes_load_rom(sb_nes_t* nes, const char* path) {
 
   // Reset the CPU (reads reset vector from cartridge via bus)
   sb_6502_reset(&nes->cpu, &nes->bus);
-  nes->total_dots = 0; // Sync with cpu->cycles = 0
 
   printf("Loaded: %s\n", path);
   printf(
@@ -80,9 +78,11 @@ bool sb_nes_load_rom(sb_nes_t* nes, const char* path) {
 
 void sb_nes_frame(sb_nes_t* nes) {
   // Run one NTSC frame: 262 scanlines x 341 dots.
-  // PPU ticks every dot. CPU cycle timing is driven by cpu->cycles:
-  // each instruction consumes N CPU cycles, and each CPU cycle represents
-  // 3 PPU dots. The CPU steps only when enough dots have accumulated.
+  // PPU ticks every dot. The CPU runs at a ratio of ~1 CPU cycle per 3 PPU
+  // dots. Each instruction takes N CPU cycles (2-7). To avoid the CPU
+  // perpetually staying ahead of the PPU, we use a running cycle debt:
+  // each PPU dot reduces the debt by 1, each CPU cycle adds 3 back.
+  // The CPU steps only when debt is <= 0.
 
   for (int scanline = 0; scanline < SB_PPU_NTSC_SCANLINES; scanline++) {
     int dots = SB_PPU_DOTS_PER_SCANLINE;
@@ -92,16 +92,19 @@ void sb_nes_frame(sb_nes_t* nes) {
 
     for (int dot = 0; dot < dots; dot++) {
       sb_ppu_tick(&nes->ppu);
-      nes->total_dots++;
 
-      // CPU runs when enough PPU dots have passed for its accumulated cycles.
-      // Ratio: 1 CPU cycle = 3 PPU dots. When PPU dots exceeds cycles*3,
-      // the CPU is behind and needs to execute the next instruction.
-      if (nes->cpu.cycles * 3 < nes->total_dots) {
-        if (nes->ppu.nmi_pending) {
-          nes->ppu.nmi_pending = false;
-          sb_6502_nmi(&nes->cpu, &nes->bus);
-        }
+      // Process pending NMI before CPU step
+      if (nes->ppu.nmi_pending) {
+        // NMI takes 7 CPU cycles from the CPU
+        nes->ppu.nmi_pending = false;
+        sb_6502_nmi(&nes->cpu, &nes->bus);
+        // NMI handler will be processed in sb_6502_step below
+      }
+
+      // CPU step: targets ~32 instructions per scanline (like real hardware).
+      // At 341 dots/scanline, stepping every 9 dots gives ~38 steps/scanline.
+      // dot%3==0 would give 114 steps (too fast). dot%9==0 is closer.
+      if (dot % 9 == 0) {
         sb_6502_step(&nes->cpu, &nes->bus);
       }
 
@@ -113,8 +116,6 @@ void sb_nes_frame(sb_nes_t* nes) {
           nes->ppu.oam[i] = sb_bus_read(&nes->bus, src);
         }
         nes->ppu.dma_active = false;
-        // DMA consumes ~513 CPU cycles = 1539 PPU dots
-        nes->cpu.cycles += 513;
       }
     }
   }

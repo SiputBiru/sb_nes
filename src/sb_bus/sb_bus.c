@@ -19,7 +19,10 @@ uint8_t sb_bus_read(sb_bus_t* bus, uint16_t addr) {
     if (addr < 0x4020) {
       // Controller port 1 ($4016)
       if (addr == 0x4016) {
-        if (bus->controller_index > 7) {
+        if (bus->controller_strobe) {
+          // Strobe active: always return A button (bit 0), no advance
+          bus->last_read = bus->controller_bits & 1;
+        } else if (bus->controller_index > 7) {
           // After 8 reads, open bus returns 1
           bus->last_read = 1;
         } else {
@@ -72,10 +75,11 @@ uint8_t sb_bus_write(sb_bus_t* bus, uint16_t addr, uint8_t val) {
       if (bus->ppu)
         sb_ppu_oam_dma_start(bus->ppu, val);
     } else if (addr == 0x4016) {
-      // Strobe: writing bit0=1 resets read index, bit0=0 allows reading
-      if (val & 0x01) {
+      // Strobe: writing bit0=1 resets index and keeps strobe active
+      // writing bit0=0 ends strobe, allowing reads to advance
+      bus->controller_strobe = (val & 0x01) != 0;
+      if (bus->controller_strobe)
         bus->controller_index = 0;
-      }
     }
     break;
 

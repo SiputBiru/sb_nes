@@ -29,6 +29,7 @@ typedef struct {
   // Frontend mask: A=bit7, B=bit6, Sel=bit5, Start=bit4, Up=bit3, Dn=bit2, L=bit1, R=bit0
   uint8_t controller_bits;   // current button state (NES bit order)
   uint8_t controller_index;  // current read position (0-8, >7 = open bus)
+  bool controller_strobe;    // strobe active: reads return A without advancing
 } sb_bus_t;
 
 uint8_t sb_bus_read(sb_bus_t* bus, uint16_t addr);

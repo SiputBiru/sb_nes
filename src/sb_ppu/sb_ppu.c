@@ -37,11 +37,11 @@ static uint16_t ppu_real_addr(sb_ppu_t* ppu, uint16_t addr) {
         // NT2 (0x800-0xBFF): keep as page 1.
         // NT3 (0xC00-0xFFF): mirror to NT2 → map to page 1.
         if (addr >= 0x400 && addr < 0x800) {
-          addr -= 0x400;                     // NT1 → NT0 (page 0)
+          addr -= 0x400; // NT1 → NT0 (page 0)
         } else if (addr >= 0x800) {
-          addr -= 0x400;                     // NT2 → 0x400-0x7FF, NT3 → 0x800-0xBFF
+          addr -= 0x400; // NT2 → 0x400-0x7FF, NT3 → 0x800-0xBFF
           if (addr >= 0x800)
-            addr -= 0x400;                   // NT3 → 0x400-0x7FF (page 1)
+            addr -= 0x400; // NT3 → 0x400-0x7FF (page 1)
         }
         break;
       default:
@@ -242,8 +242,7 @@ void sb_ppu_tick(sb_ppu_t* ppu) {
   // outputs the palette byte at the current VRAM address (v) for each
   // pixel. This is used by demos like full_palette.nes.
   // Render one pixel per dot during the visible portion (dots 1-256).
-  if (!rendering && ppu->scanline < SB_PPU_VISIBLE_SCANLINES &&
-      ppu->dot >= 1 && ppu->dot <= 256) {
+  if (!rendering && ppu->scanline < SB_PPU_VISIBLE_SCANLINES && ppu->dot >= 1 && ppu->dot <= 256) {
     int x = ppu->dot - 1;
     uint16_t palette_addr = ppu->v & 0x3FFF;
 
@@ -260,9 +259,9 @@ void sb_ppu_tick(sb_ppu_t* ppu) {
     }
   }
 
-  // VBlank start at scanline 241, dot 0.
+  // VBlank start at scanline 241, dot 1.
   // Sets the VBlank flag in PPUSTATUS and triggers NMI if enabled.
-  if (ppu->scanline == SB_PPU_VISIBLE_SCANLINES + 1 && ppu->dot == 0) {
+  if (ppu->scanline == SB_PPU_VISIBLE_SCANLINES + 1 && ppu->dot == 1) {
     ppu->ppustatus |= SB_PPUSTATUS_VBLANK;
     ppu->vblank_clear_pending = false; // Reset for fresh VBlank reads
 
@@ -275,8 +274,8 @@ void sb_ppu_tick(sb_ppu_t* ppu) {
     ppu->nmi_previous = nmi_now;
   }
 
-  // Pre-render scanline (261): clear flags at start.
-  if (ppu->scanline == SB_PPU_NTSC_SCANLINES - 1 && ppu->dot == 0) {
+  // Pre-render scanline (261): clear flags at start
+  if (ppu->scanline == SB_PPU_NTSC_SCANLINES - 1 && ppu->dot == 1) {
     ppu->ppustatus &= ~(SB_PPUSTATUS_VBLANK | SB_PPUSTATUS_SPRITE0_HIT | SB_PPUSTATUS_OVERFLOW);
     ppu->nmi_previous = false; // VBlank going low resets edge detection
     ppu->vblank_clear_pending = false;
