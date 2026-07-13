@@ -25,13 +25,13 @@ static uint16_t ppu_real_addr(sb_ppu_t* ppu, uint16_t addr) {
     // Vertical:   NT0→page0, NT1→page0, NT2→page1, NT3→page1
     if (ppu->cartridge) {
       switch (ppu->cartridge->mirroring) {
-      case SB_MIRROR_HORIZONTAL:
+      case SB_MIRROR_VERTICAL:
         // Keep NT0 (0x000-0x3FF) and NT1 (0x400-0x7FF).
         // Map NT2 (0x800-0xBFF) and NT3 (0xC00-0xFFF) down.
         if (addr >= 0x800)
           addr -= 0x800;
         break;
-      case SB_MIRROR_VERTICAL:
+      case SB_MIRROR_HORIZONTAL:
         // NT0 (0x000-0x3FF): keep as page 0.
         // NT1 (0x400-0x7FF): mirror to NT0 → map to page 0.
         // NT2 (0x800-0xBFF): keep as page 1.
@@ -166,9 +166,19 @@ uint8_t sb_ppu_read(sb_ppu_t* ppu, uint16_t addr) {
 void sb_ppu_write(sb_ppu_t* ppu, uint16_t addr, uint8_t val) {
   switch (addr & 0x0007) {
   case 0: // PPUCTRL
+  {
     ppu->ppuctrl = val;
     ppu->t = (ppu->t & 0xF3FF) | ((uint16_t)(val & 0x03) << 10);
+
+    // Edge-triggered NMI detection during active VBlank
+    bool nmi_now =
+      (ppu->ppuctrl & SB_PPUCTRL_NMI) != 0 && (ppu->ppustatus & SB_PPUSTATUS_VBLANK) != 0;
+    if (nmi_now && !ppu->nmi_previous) {
+      ppu->nmi_pending = true;
+    }
+    ppu->nmi_previous = nmi_now;
     break;
+  }
 
   case 1: // PPUMASK
     ppu->ppumask = val;
@@ -187,6 +197,7 @@ void sb_ppu_write(sb_ppu_t* ppu, uint16_t addr, uint8_t val) {
       // First write: coarse X scroll + fine X
       ppu->t = (ppu->t & 0xFFE0) | (val >> 3);
       ppu->x = val & 0x07;
+      ppu->fine_x_counter = val & 0x07;
       ppu->w = 1;
     } else {
       // Second write: coarse Y scroll + fine Y
@@ -219,8 +230,6 @@ void sb_ppu_write(sb_ppu_t* ppu, uint16_t addr, uint8_t val) {
   }
 }
 
-
-
 // PPU Tick
 
 void sb_ppu_tick(sb_ppu_t* ppu) {
@@ -235,10 +244,10 @@ void sb_ppu_tick(sb_ppu_t* ppu) {
   if (ppu->scanline == SB_PPU_NTSC_SCANLINES - 1 && ppu->odd_frame && rendering)
     max_dot = SB_PPU_DOTS_PER_SCANLINE - 1;
 
-  // Normal background rendering: render full scanline at dot 0
-  // when rendering is enabled.
-  if (rendering && ppu->scanline < SB_PPU_VISIBLE_SCANLINES && ppu->dot == 0)
-    sb_ppu_render_scanline(ppu);
+  // Pixel-by-pixel rendering: render one pixel per dot.
+  if (rendering && ppu->scanline < SB_PPU_VISIBLE_SCANLINES && ppu->dot >= 1 && ppu->dot <= 256) {
+    sb_ppu_render_pixel(ppu);
+  }
 
   // Direct color control mode: when rendering is disabled, the PPU
   // outputs the palette byte at the current VRAM address (v) for each
@@ -305,11 +314,13 @@ void sb_ppu_tick(sb_ppu_t* ppu) {
   // Horizontal reload at dot 257 from t to v
   if (rendering && ppu->dot == 257) {
     ppu->v = (ppu->v & ~0x041F) | (ppu->t & 0x041F);
+    ppu->fine_x_counter = ppu->x;
   }
 
   // Pre-render scanline dots 280 to 304: reload vertical bits from t to v
-  if (rendering && ppu->scanline == SB_PPU_NTSC_SCANLINES - 1 &&
-      ppu->dot >= 280 && ppu->dot <= 304) {
+  if (
+    rendering && ppu->scanline == SB_PPU_NTSC_SCANLINES - 1 && ppu->dot >= 280 && ppu->dot <= 304
+  ) {
     ppu->v = (ppu->v & ~0x7BE0) | (ppu->t & 0x7BE0);
   }
 
@@ -347,5 +358,3 @@ void sb_ppu_init(sb_ppu_t* ppu, sb_cartridge_t* cart) {
 
 // Framebuffer Access
 uint8_t* sb_ppu_get_framebuffer(sb_ppu_t* ppu) { return ppu->framebuffer; }
-
-

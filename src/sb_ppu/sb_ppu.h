@@ -53,17 +53,25 @@ typedef struct sb_ppu_t {
   bool odd_frame;
 
   // Address / scroll state (v, t, x, w from NESDev)
-  uint16_t v; // current VRAM address (15-bit)
-  uint16_t t; // temporary VRAM address
-  uint8_t x;  // fine X scroll (3-bit)
-  uint8_t w;  // write toggle
+  uint16_t v;             // current VRAM address (15-bit)
+  uint16_t t;             // temporary VRAM address
+  uint8_t x;              // fine X scroll (3-bit)
+  uint8_t w;              // write toggle
+  uint8_t fine_x_counter; // fine X running counter during rendering
 
   // Memory
-  uint8_t vram[2048];  // 2 KB nametable VRAM
-  uint8_t palette[32]; // Palette RAM ($3F00-$3F1F)
-  uint8_t oam[256];    // Object Attribute Memory (64 sprites x 4 bytes)
-  uint8_t oam_cache[8];    // Sprite indices on current scanline (max 8)
-  uint8_t oam_cache_len;   // Number of sprites on current scanline
+  uint8_t vram[2048];    // 2 KB nametable VRAM
+  uint8_t palette[32];   // Palette RAM ($3F00-$3F1F)
+  uint8_t oam[256];      // Object Attribute Memory (64 sprites x 4 bytes)
+  uint8_t oam_cache[8];  // Sprite indices on current scanline (max 8)
+  uint8_t oam_cache_len; // Number of sprites on current scanline
+
+  // Per-tile shift registers / caches
+  uint8_t cached_tile_index;
+  uint8_t cached_attr;
+  uint8_t cached_low;
+  uint8_t cached_high;
+  uint8_t cached_palette_id;
 
   // Frame buffer (256x240, palette indices)
   uint8_t framebuffer[SB_PPU_FB_WIDTH * SB_PPU_FB_HEIGHT];
@@ -103,10 +111,8 @@ void sb_ppu_oam_dma_start(sb_ppu_t* ppu, uint8_t page);
 // Get the framebuffer (palette indices)
 uint8_t* sb_ppu_get_framebuffer(sb_ppu_t* ppu);
 
-
-
-// Render one scanline of background (called from tick)
-void sb_ppu_render_scanline(sb_ppu_t* ppu);
+// Render one pixel of background and sprites
+void sb_ppu_render_pixel(sb_ppu_t* ppu);
 
 // VRAM access (internal helpers, exposed for testing)
 uint8_t sb_ppu_vram_read(sb_ppu_t* ppu, uint16_t addr);
