@@ -24,7 +24,7 @@ static void run_test(const char* name, const char* path, size_t max_cycles) {
 int main(void) {
   run_test(
     "CPU Timing Test 6",
-    "../reference/nes-test-roms/cpu_timing_test6/cpu_timing_test.nes",
+    "test/blargg/roms/cpu_timing_test.nes",
     5000000
   );
 

@@ -24,19 +24,19 @@ static void run_test(const char* name, const char* path, size_t max_cycles) {
 int main(void) {
   run_test(
     "Branch Basics",
-    "../reference/nes-test-roms/branch_timing_tests/1.Branch_Basics.nes",
+    "test/blargg/roms/1.Branch_Basics.nes",
     5000000
   );
 
   run_test(
     "Backward Branch",
-    "../reference/nes-test-roms/branch_timing_tests/2.Backward_Branch.nes",
+    "test/blargg/roms/2.Backward_Branch.nes",
     5000000
   );
 
   run_test(
     "Forward Branch",
-    "../reference/nes-test-roms/branch_timing_tests/3.Forward_Branch.nes",
+    "test/blargg/roms/3.Forward_Branch.nes",
     5000000
   );
 
