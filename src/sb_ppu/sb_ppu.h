@@ -36,6 +36,16 @@
 #define SB_PPUSTATUS_SPRITE0_HIT 0x40
 #define SB_PPUSTATUS_VBLANK 0x80
 
+typedef struct {
+  // Per-tile shift registers / caches
+  uint8_t cached_tile_index;
+  uint8_t cached_attr;
+  uint8_t cached_low;
+  uint8_t cached_high;
+  uint8_t cached_palette_id;
+
+} sb_ppu_tile_cache_t;
+
 typedef struct sb_ppu_t {
   // Registers ($2000-$2007)
   uint8_t ppuctrl;
@@ -65,6 +75,13 @@ typedef struct sb_ppu_t {
   uint8_t oam[256];      // Object Attribute Memory (64 sprites x 4 bytes)
   uint8_t oam_cache[8];  // Sprite indices on current scanline (max 8)
   uint8_t oam_cache_len; // Number of sprites on current scanline
+
+  uint8_t spr_low[8];  // pre-feched pattern low byte
+  uint8_t spr_high[8]; // pre-feched pattern high byte
+  uint8_t spr_x[8];    // Screen x position
+  uint8_t spr_pal[8];  // Pallete ID (attr & 0x03)
+  bool spr_behind[8];  // Behind BG flag
+  bool spr_hflip[8];   // Horizontal flip flag
 
   // Per-tile shift registers / caches
   uint8_t cached_tile_index;
