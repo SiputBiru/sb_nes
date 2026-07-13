@@ -1,3 +1,6 @@
 # sb_nes
 
-just another nes emulator.
+yet another nes emulator.
+
+deps: 
+- SDL3 
