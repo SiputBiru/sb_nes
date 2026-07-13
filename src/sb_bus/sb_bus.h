@@ -18,12 +18,6 @@ typedef struct {
   struct sb_apu_t* apu;
   struct sb_cartridge_t* cartridge;
 
-  // DMA state
-  bool dma_active;
-  uint8_t dma_page;
-  uint8_t dma_offset;
-  bool dma_dummy;
-
   // Controller state (player 1, $4016)
   // NES protocol: A=bit0, B=bit1, Sel=bit2, Start=bit3, Up=bit4, Dn=bit5, L=bit6, R=bit7
   // Frontend mask: A=bit7, B=bit6, Sel=bit5, Start=bit4, Up=bit3, Dn=bit2, L=bit1, R=bit0

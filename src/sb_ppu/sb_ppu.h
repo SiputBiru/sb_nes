@@ -103,6 +103,8 @@ void sb_ppu_oam_dma_start(sb_ppu_t* ppu, uint8_t page);
 // Get the framebuffer (palette indices)
 uint8_t* sb_ppu_get_framebuffer(sb_ppu_t* ppu);
 
+
+
 // Render one scanline of background (called from tick)
 void sb_ppu_render_scanline(sb_ppu_t* ppu);
 

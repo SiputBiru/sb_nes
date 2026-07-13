@@ -219,6 +219,8 @@ void sb_ppu_write(sb_ppu_t* ppu, uint16_t addr, uint8_t val) {
   }
 }
 
+
+
 // PPU Tick
 
 void sb_ppu_tick(sb_ppu_t* ppu) {
@@ -281,10 +283,34 @@ void sb_ppu_tick(sb_ppu_t* ppu) {
     ppu->vblank_clear_pending = false;
   }
 
-  // Pre-render scanline: reload scroll registers from temp at END of scanline.
-  // Uses max_dot - 1 to handle both 340-dot (odd) and 341-dot (even) frames.
-  if (ppu->scanline == SB_PPU_NTSC_SCANLINES - 1 && ppu->dot == max_dot - 1 && rendering) {
-    ppu->v = ppu->t;
+  // Y increment at dot 256 of visible scanlines
+  if (rendering && ppu->scanline < SB_PPU_VISIBLE_SCANLINES && ppu->dot == 256) {
+    if ((ppu->v & 0x7000) != 0x7000) {
+      ppu->v += 0x1000;
+    } else {
+      ppu->v &= ~0x7000;
+      int y = (ppu->v >> 5) & 0x1F;
+      if (y == 29) {
+        y = 0;
+        ppu->v ^= 0x0800;
+      } else if (y == 31) {
+        y = 0;
+      } else {
+        y++;
+      }
+      ppu->v = (ppu->v & ~0x03E0) | (y << 5);
+    }
+  }
+
+  // Horizontal reload at dot 257 from t to v
+  if (rendering && ppu->dot == 257) {
+    ppu->v = (ppu->v & ~0x041F) | (ppu->t & 0x041F);
+  }
+
+  // Pre-render scanline dots 280 to 304: reload vertical bits from t to v
+  if (rendering && ppu->scanline == SB_PPU_NTSC_SCANLINES - 1 &&
+      ppu->dot >= 280 && ppu->dot <= 304) {
+    ppu->v = (ppu->v & ~0x7BE0) | (ppu->t & 0x7BE0);
   }
 
   // Advance dot.
@@ -321,3 +347,5 @@ void sb_ppu_init(sb_ppu_t* ppu, sb_cartridge_t* cart) {
 
 // Framebuffer Access
 uint8_t* sb_ppu_get_framebuffer(sb_ppu_t* ppu) { return ppu->framebuffer; }
+
+

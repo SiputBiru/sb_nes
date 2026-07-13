@@ -20,6 +20,20 @@ static void evaluate_sprites(sb_ppu_t* ppu) {
   }
 }
 
+static void ppu_render_advance_x(sb_ppu_t* ppu) {
+  if (ppu->x == 7) {
+    ppu->x = 0;
+    if ((ppu->v & 0x001F) == 31) {
+      ppu->v &= ~0x001F;
+      ppu->v ^= 0x0400;
+    } else {
+      ppu->v++;
+    }
+  } else {
+    ppu->x++;
+  }
+}
+
 void sb_ppu_render_scanline(sb_ppu_t* ppu) {
   if (ppu->scanline >= SB_PPU_VISIBLE_SCANLINES)
     return;
@@ -27,51 +41,56 @@ void sb_ppu_render_scanline(sb_ppu_t* ppu) {
   bool bg_enabled = (ppu->ppumask & SB_PPUMASK_SHOW_BG) != 0;
   bool spr_enabled = (ppu->ppumask & SB_PPUMASK_SHOW_SPR) != 0;
 
-  // --- Background Rendering ---
+  // Background Rendering (uses v register per hardware spec)
   if (bg_enabled) {
-    int fine_y = (ppu->scanline & 7);
-    int tile_row = ppu->scanline >> 3;
     bool show_left = (ppu->ppumask & SB_PPUMASK_SHOW_BG_LEFT) != 0;
-
-    uint16_t nt_base = 0x2000 | ((ppu->t >> 10) & 0x03) * 0x400;
     uint16_t pt_base = (ppu->ppuctrl & SB_PPUCTRL_BG_PT) ? 0x1000 : 0;
 
-    for (int tile_col = 0; tile_col < 32; tile_col++) {
-      uint16_t tile_addr = nt_base + tile_row * 32 + tile_col;
-      uint8_t tile_index = sb_ppu_vram_read(ppu, tile_addr);
+    // Save v and x so dot based updates in sb_ppu_tick see the correct state
+    uint16_t v_saved = ppu->v;
+    uint8_t  x_saved = ppu->x;
 
-      uint16_t attr_addr = nt_base + 0x03C0 +
-                           (tile_row / 4) * 8 + (tile_col / 4);
+    for (int pixel = 0; pixel < 256; pixel++) {
+      if (pixel < 8 && !show_left) {
+        ppu_render_advance_x(ppu);
+        ppu->framebuffer[ppu->scanline * 256 + pixel] = ppu->palette[0];
+        continue;
+      }
+
+      // Nametable byte: v bits 0 to 11 index into $2000 to $2FFF
+      uint16_t nt_addr = 0x2000 | (ppu->v & 0x0FFF);
+      uint8_t tile_index = sb_ppu_vram_read(ppu, nt_addr);
+
+      // Attribute byte: computed from v per hardware formula
+      uint16_t attr_addr = 0x23C0 | (ppu->v & 0x0C00) |
+                           ((ppu->v >> 4) & 0x38) | ((ppu->v >> 2) & 0x07);
       uint8_t attr = sb_ppu_vram_read(ppu, attr_addr);
+      int shift = ((ppu->v >> 1) & 1) | ((ppu->v >> 5) & 2);
+      uint8_t palette_id = (attr >> (shift * 2)) & 0x03;
 
-      int shift = ((tile_col % 4) / 2) * 2 + ((tile_row % 4) / 2) * 4;
-      uint8_t palette_id = (attr >> shift) & 0x03;
-
-      uint16_t pattern_addr = pt_base + (uint16_t)tile_index * 16 + fine_y;
+      // Pattern table: fine Y from v bits 12 to 14
+      uint16_t fine_y = (ppu->v >> 12) & 0x07;
+      uint16_t pattern_addr = pt_base + tile_index * 16 + fine_y;
       uint8_t low = sb_ppu_vram_read(ppu, pattern_addr);
       uint8_t high = sb_ppu_vram_read(ppu, pattern_addr + 8);
 
-      for (int pixel = 0; pixel < 8; pixel++) {
-        int screen_x = tile_col * 8 + pixel;
+      // Extract pixel using ppu->x as the bit selector within the tile
+      int bit = 7 - ppu->x;
+      uint8_t color = ((high >> bit) & 1) << 1 | ((low >> bit) & 1);
 
-        if (screen_x < 8 && !show_left)
-          continue;
-        if (screen_x >= 256)
-          continue;
+      int fb_index = ppu->scanline * 256 + pixel;
+      if (color != 0)
+        ppu->framebuffer[fb_index] = ppu->palette[palette_id * 4 + color];
+      else
+        ppu->framebuffer[fb_index] = ppu->palette[0];
 
-        int bit = 7 - pixel;
-        uint8_t color = ((high >> bit) & 1) << 1 | ((low >> bit) & 1);
-
-        int fb_index = ppu->scanline * 256 + screen_x;
-
-        if (color != 0) {
-          uint8_t entry = palette_id * 4 + color;
-          ppu->framebuffer[fb_index] = ppu->palette[entry];
-        } else {
-          ppu->framebuffer[fb_index] = ppu->palette[0];
-        }
-      }
+      // Advance to next pixel, updating v coarse X via ppu->x tracking
+      ppu_render_advance_x(ppu);
     }
+
+    // Restore so sb_ppu_tick dot 256 and 257 updates work correctly
+    ppu->v = v_saved;
+    ppu->x = x_saved;
   } else {
     // Background disabled: fill scanline with backdrop color
     for (int x = 0; x < 256; x++) {
@@ -79,7 +98,7 @@ void sb_ppu_render_scanline(sb_ppu_t* ppu) {
     }
   }
 
-  // --- Sprite Evaluation ---
+  // Sprite Evaluation
   if (!spr_enabled)
     return;
 
