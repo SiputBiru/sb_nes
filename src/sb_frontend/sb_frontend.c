@@ -2,7 +2,6 @@
 #include "../sb_ppu/sb_ppu_palette.h"
 #include <SDL3/SDL.h>
 #include <stdio.h>
-#include <stdlib.h>
 
 // NES Controller Bitmask
 // Matches NES register layout: bit = button pressed
@@ -88,18 +87,11 @@ int sb_frontend_run(sb_frontend_config_t* config) {
   }
 
   // Init NES
-  sb_nes_t* nes = calloc(1, sizeof(sb_nes_t));
-  if (!nes) {
-    fprintf(stderr, "Failed to allocate NES state\n");
-    SDL_DestroyRenderer(renderer);
-    SDL_DestroyWindow(window);
-    SDL_Quit();
-    return 1;
-  }
-  sb_nes_init(nes);
+  sb_nes_t nes;
+  memset(&nes, 0, sizeof(nes));
+  sb_nes_init(&nes);
 
-  if (!sb_nes_load_rom(nes, config->rom_path)) {
-    free(nes);
+  if (!sb_nes_load_rom(&nes, config->rom_path)) {
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
     SDL_Quit();
@@ -119,20 +111,19 @@ int sb_frontend_run(sb_frontend_config_t* config) {
     }
 
     // Read controller
-    sb_nes_set_buttons(nes, read_controller());
+    sb_nes_set_buttons(&nes, read_controller());
 
     // Run one frame
-    sb_nes_frame(nes);
+    sb_nes_frame(&nes);
 
     // Render
-    render_frame(renderer, nes, config->window_scale);
+    render_frame(renderer, &nes, config->window_scale);
 
     // ~60 FPS cap
     SDL_Delay(16);
   }
 
   // Cleanup
-  free(nes);
   SDL_DestroyRenderer(renderer);
   SDL_DestroyWindow(window);
   SDL_Quit();
