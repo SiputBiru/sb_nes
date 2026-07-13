@@ -3,10 +3,8 @@
 yet another nes emulator.
 
 mini demo:
-<video width="320" controls>
-  <source src="./assets/supermariobrosvideo.mp4" type="video/mp4">
-Your browser does not support the video tag.
-</video>
+
+![SMB gameplay](assets/gameplay.gif)
 
 there is still no audio output stuff.
 and currently only work with [INES 1.0 mapper](https://www.nesdev.org/wiki/Mapper)
