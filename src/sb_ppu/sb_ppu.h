@@ -36,13 +36,13 @@
 
 typedef struct {
   // Per-tile shift registers / caches
-  uint8_t cached_tile_index;
-  uint8_t cached_attr;
-  uint8_t cached_low;
-  uint8_t cached_high;
-  uint8_t cached_palette_id;
+  uint8_t tile_index;
+  uint8_t attr;
+  uint8_t low;
+  uint8_t high;
+  uint8_t palette_id;
 
-} sb_ppu_tile_cache_t;
+} sb_ppu_tile_cache;
 
 typedef struct sb_ppu_t {
   // Registers ($2000-$2007)
@@ -82,7 +82,7 @@ typedef struct sb_ppu_t {
   bool spr_hflip[8];   // Horizontal flip flag
 
   // Per-tile shift registers / caches
-  sb_ppu_tile_cache_t tile_cache;
+  sb_ppu_tile_cache tile_cache;
 
   // Frame buffer (256x240, palette indices)
   uint8_t framebuffer[SB_PPU_FB_WIDTH * SB_PPU_FB_HEIGHT];
