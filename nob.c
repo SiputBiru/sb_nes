@@ -106,26 +106,6 @@ static int build_instr_v5(void) {
   return build_blargg_test("test_instr_v5", TEST_FOLDER "blargg/test_instr_v5.c");
 }
 
-static int build_all_blargg(void) {
-  printf("Branch Timing Tests:\n");
-  if (build_branch_timing())
-    return 1;
-
-  printf("\nCPU Timing Tests:\n");
-  if (build_cpu_timing())
-    return 1;
-
-  printf("\nCPU Interrupt Tests:\n");
-  if (build_cpu_interrupts())
-    return 1;
-
-  printf("\ninstr_test-v5:\n");
-  if (build_instr_v5())
-    return 1;
-
-  return 0;
-}
-
 int main(int argc, char** argv) {
   NOB_GO_REBUILD_URSELF(argc, argv);
 
@@ -135,8 +115,28 @@ int main(int argc, char** argv) {
   if (argc > 1) {
 
     if (strcmp(argv[1], "test-all") == 0) {
-      if (build_all_blargg())
+      printf("Build all blargg");
+      printf("Branch Timing Tests:\n");
+      if (build_branch_timing())
         return 1;
+
+      printf("\nCPU Timing Tests:\n");
+      if (build_cpu_timing())
+        return 1;
+
+      printf("\nCPU Interrupt Tests:\n");
+      if (build_cpu_interrupts())
+        return 1;
+
+      printf("\ninstr_test-v5:\n");
+      if (build_instr_v5())
+        return 1;
+
+      printf("\nnestest CPU Tests:\n");
+      if (build_nestest())
+        return 1;
+      return 0;
+
       return 0;
     }
 
