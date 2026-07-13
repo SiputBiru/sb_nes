@@ -2,8 +2,6 @@
 #define SB_PPU_H
 
 #include "../sb_cartridge/sb_cartridge.h"
-#include <stdbool.h>
-#include <stdint.h>
 
 #define SB_PPU_VISIBLE_SCANLINES 240
 #define SB_PPU_NTSC_SCANLINES 262
@@ -84,11 +82,7 @@ typedef struct sb_ppu_t {
   bool spr_hflip[8];   // Horizontal flip flag
 
   // Per-tile shift registers / caches
-  uint8_t cached_tile_index;
-  uint8_t cached_attr;
-  uint8_t cached_low;
-  uint8_t cached_high;
-  uint8_t cached_palette_id;
+  sb_ppu_tile_cache_t tile_cache;
 
   // Frame buffer (256x240, palette indices)
   uint8_t framebuffer[SB_PPU_FB_WIDTH * SB_PPU_FB_HEIGHT];

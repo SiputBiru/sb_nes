@@ -2,10 +2,6 @@
 #include <string.h>
 
 // Translate PPU address to real VRAM/palette index, handling mirroring.
-// Returns:
-//   < 0x2000    → Pattern table index (CHR-ROM/RAM, pass through)
-//   0x2000-0x27FF → VRAM nametable index (vram[addr - 0x2000])
-//   >= 0x3F00   → Palette index (palette[addr & 0x1F], with mirroring applied)
 static uint16_t ppu_real_addr(sb_ppu_t* ppu, uint16_t addr) {
   addr &= 0x3FFF; // 14-bit address space
 
@@ -18,42 +14,34 @@ static uint16_t ppu_real_addr(sb_ppu_t* ppu, uint16_t addr) {
     addr &= 0x2FFF;
     addr -= 0x2000; // Now 0x000-0xFFF (4 nametable slots of 1KB each)
 
-    // Apply cartridge mirroring to map 4 nametable slots into 2KB VRAM
-    // Physical vram[0x000-0x3FF] = page 0, vram[0x400-0x7FF] = page 1
-    //
-    // Horizontal: NT0→page0, NT1→page1, NT2→page0, NT3→page1
-    // Vertical:   NT0→page0, NT1→page0, NT2→page1, NT3→page1
+    // Apply cartridge mirroring to map 4 nametable slots into 2KB VRAM.
+    // VRAM page 0: vram[0x000-0x3FF], page 1: vram[0x400-0x7FF]
     if (ppu->cartridge) {
       switch (ppu->cartridge->mirroring) {
       case SB_MIRROR_VERTICAL:
-        // Keep NT0 (0x000-0x3FF) and NT1 (0x400-0x7FF).
-        // Map NT2 (0x800-0xBFF) and NT3 (0xC00-0xFFF) down.
+        // NT0/NT1 → page 0, NT2/NT3 → page 1
+        // Two unique pages arranged vertically (good for horizontal scrolling)
         if (addr >= 0x800)
           addr -= 0x800;
         break;
       case SB_MIRROR_HORIZONTAL:
-        // NT0 (0x000-0x3FF): keep as page 0.
-        // NT1 (0x400-0x7FF): mirror to NT0 → map to page 0.
-        // NT2 (0x800-0xBFF): keep as page 1.
-        // NT3 (0xC00-0xFFF): mirror to NT2 → map to page 1.
-        if (addr >= 0x400 && addr < 0x800) {
-          addr -= 0x400; // NT1 → NT0 (page 0)
-        } else if (addr >= 0x800) {
-          addr -= 0x400; // NT2 → 0x400-0x7FF, NT3 → 0x800-0xBFF
+        // NT0/NT2 → page 0, NT1/NT3 → page 1
+        // Two unique pages arranged horizontally (good for vertical scrolling)
+        if (addr >= 0x400 && addr < 0x800)
+          addr -= 0x400;
+        else if (addr >= 0x800) {
+          addr -= 0x400;
           if (addr >= 0x800)
-            addr -= 0x400; // NT3 → 0x400-0x7FF (page 1)
+            addr -= 0x400;
         }
         break;
       default:
-        // Four-screen or unknown: keep all pages distinct
-        // addr already fits within 0x000-0xFFF, but VRAM is only 2KB.
-        // For four-screen, external VRAM would be needed. Fallback: clip.
+        // Four-screen or unknown: keep all pages, clip overflow
         if (addr >= 0x800)
           addr -= 0x800;
         break;
       }
     } else {
-      // No cartridge: default to horizontal mirroring
       if (addr >= 0x800)
         addr -= 0x800;
     }

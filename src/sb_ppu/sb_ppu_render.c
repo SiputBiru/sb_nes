@@ -88,20 +88,21 @@ void sb_ppu_render_pixel(sb_ppu_t* ppu) {
   if (bg_enabled || spr_enabled) {
     if (pixel_x == 0 || ppu->fine_x_counter == 0) {
       uint16_t nt_addr = 0x2000 | (ppu->v & 0x0FFF);
-      ppu->cached_tile_index = sb_ppu_vram_read(ppu, nt_addr);
+      // ppu->cached_tile_index = sb_ppu_vram_read(ppu, nt_addr);
+      ppu->tile_cache.cached_tile_index = sb_ppu_vram_read(ppu, nt_addr);
 
       uint16_t attr_addr =
         0x23C0 | (ppu->v & 0x0C00) | ((ppu->v >> 4) & 0x38) | ((ppu->v >> 2) & 0x07);
-      ppu->cached_attr = sb_ppu_vram_read(ppu, attr_addr);
+      ppu->tile_cache.cached_attr = sb_ppu_vram_read(ppu, attr_addr);
 
       int shift = ((ppu->v >> 1) & 1) | ((ppu->v >> 5) & 2);
-      ppu->cached_palette_id = (ppu->cached_attr >> (shift * 2)) & 0x03;
+      ppu->tile_cache.cached_palette_id = (ppu->tile_cache.cached_attr >> (shift * 2)) & 0x03;
 
       uint16_t fine_y = (ppu->v >> 12) & 0x07;
       uint16_t pt_base = (ppu->ppuctrl & SB_PPUCTRL_BG_PT) ? 0x1000 : 0;
-      uint16_t pattern_addr = pt_base + ppu->cached_tile_index * 16 + fine_y;
-      ppu->cached_low = sb_ppu_vram_read(ppu, pattern_addr);
-      ppu->cached_high = sb_ppu_vram_read(ppu, pattern_addr + 8);
+      uint16_t pattern_addr = pt_base + ppu->tile_cache.cached_tile_index * 16 + fine_y;
+      ppu->tile_cache.cached_low = sb_ppu_vram_read(ppu, pattern_addr);
+      ppu->tile_cache.cached_high = sb_ppu_vram_read(ppu, pattern_addr + 8);
     }
   }
 
@@ -109,8 +110,9 @@ void sb_ppu_render_pixel(sb_ppu_t* ppu) {
   if (bg_enabled) {
     if (pixel_x >= 8 || show_bg_left) {
       int bit = 7 - ppu->fine_x_counter;
-      bg_color_idx = ((ppu->cached_high >> bit) & 1) << 1 | ((ppu->cached_low >> bit) & 1);
-      bg_palette_id = ppu->cached_palette_id;
+      bg_color_idx =
+        ((ppu->tile_cache.cached_high >> bit) & 1) << 1 | ((ppu->tile_cache.cached_low >> bit) & 1);
+      bg_palette_id = ppu->tile_cache.cached_palette_id;
       if (bg_color_idx != 0) {
         final_pixel = ppu->palette[bg_palette_id * 4 + bg_color_idx];
       }
