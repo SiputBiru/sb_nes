@@ -1,8 +1,24 @@
 #include "sb_ppu.h"
 #include <string.h>
 
+// Apply NES palette mirroring: $3F10/$3F14/$3F18/$3F1C map to
+// $3F00/$3F04/$3F08/$3F0C. Input is a 5-bit palette index (0-31).
+static inline uint8_t ppu_mirror_palette_idx(uint8_t idx) {
+  if ((idx & 0x13) == 0x10)
+    idx ^= 0x10;
+  return idx;
+}
+
+static void ppu_check_nmi_edge(sb_ppu_t *ppu) {
+  bool nmi_now = (ppu->ppuctrl & SB_PPUCTRL_NMI) != 0 &&
+                 (ppu->ppustatus & SB_PPUSTATUS_VBLANK) != 0;
+  if (nmi_now && !ppu->nmi_previous)
+    ppu->nmi_pending = true;
+  ppu->nmi_previous = nmi_now;
+}
+
 // Translate PPU address to real VRAM/palette index, handling mirroring.
-static uint16_t ppu_real_addr(sb_ppu_t* ppu, uint16_t addr) {
+static uint16_t ppu_real_addr(sb_ppu_t *ppu, uint16_t addr) {
   addr &= 0x3FFF; // 14-bit address space
 
   if (addr < 0x2000) {
@@ -51,14 +67,10 @@ static uint16_t ppu_real_addr(sb_ppu_t* ppu, uint16_t addr) {
   }
 
   // Palette ($3F00-$3FFF)
-  addr = 0x3F00 | (addr & 0x1F);
-  if ((addr & 0x13) == 0x10)
-    addr ^= 0x10; // mirror $3F10/$3F14/$3F18/$3F1C to
-                  // $3F00/$3F04/$3F08/$3F0C
-  return addr;
+  return 0x3F00 | ppu_mirror_palette_idx(addr & 0x1F);
 }
 
-uint8_t sb_ppu_vram_read(sb_ppu_t* ppu, uint16_t addr) {
+uint8_t sb_ppu_vram_read(sb_ppu_t *ppu, uint16_t addr) {
   addr = ppu_real_addr(ppu, addr);
 
   if (addr >= 0x3F00) {
@@ -75,7 +87,7 @@ uint8_t sb_ppu_vram_read(sb_ppu_t* ppu, uint16_t addr) {
   return 0;
 }
 
-void sb_ppu_vram_write(sb_ppu_t* ppu, uint16_t addr, uint8_t val) {
+void sb_ppu_vram_write(sb_ppu_t *ppu, uint16_t addr, uint8_t val) {
   addr = ppu_real_addr(ppu, addr);
 
   if (addr >= 0x3F00) {
@@ -95,7 +107,7 @@ void sb_ppu_vram_write(sb_ppu_t* ppu, uint16_t addr, uint8_t val) {
 
 // PPU Register Read
 
-uint8_t sb_ppu_read(sb_ppu_t* ppu, uint16_t addr) {
+uint8_t sb_ppu_read(sb_ppu_t *ppu, uint16_t addr) {
   switch (addr & 0x0007) {
   case 0:                // PPUCTRL (read-only, returns open bus)
   case 1:                // PPUMASK (read-only)
@@ -151,7 +163,7 @@ uint8_t sb_ppu_read(sb_ppu_t* ppu, uint16_t addr) {
 
 // PPU Register Write
 
-void sb_ppu_write(sb_ppu_t* ppu, uint16_t addr, uint8_t val) {
+void sb_ppu_write(sb_ppu_t *ppu, uint16_t addr, uint8_t val) {
   switch (addr & 0x0007) {
   case 0: // PPUCTRL
   {
@@ -159,12 +171,7 @@ void sb_ppu_write(sb_ppu_t* ppu, uint16_t addr, uint8_t val) {
     ppu->t = (ppu->t & 0xF3FF) | ((uint16_t)(val & 0x03) << 10);
 
     // Edge-triggered NMI detection during active VBlank
-    bool nmi_now =
-      (ppu->ppuctrl & SB_PPUCTRL_NMI) != 0 && (ppu->ppustatus & SB_PPUSTATUS_VBLANK) != 0;
-    if (nmi_now && !ppu->nmi_previous) {
-      ppu->nmi_pending = true;
-    }
-    ppu->nmi_previous = nmi_now;
+    ppu_check_nmi_edge(ppu);
     break;
   }
 
@@ -189,7 +196,8 @@ void sb_ppu_write(sb_ppu_t* ppu, uint16_t addr, uint8_t val) {
       ppu->w = 1;
     } else {
       // Second write: coarse Y scroll + fine Y
-      ppu->t = (ppu->t & 0x8C1F) | ((uint16_t)(val & 0x07) << 12) | ((uint16_t)(val & 0xF8) << 2);
+      ppu->t = (ppu->t & 0x8C1F) | ((uint16_t)(val & 0x07) << 12) |
+               ((uint16_t)(val & 0xF8) << 2);
       ppu->w = 0;
     }
     break;
@@ -220,10 +228,11 @@ void sb_ppu_write(sb_ppu_t* ppu, uint16_t addr, uint8_t val) {
 
 // PPU Tick
 
-void sb_ppu_tick(sb_ppu_t* ppu) {
+void sb_ppu_tick(sb_ppu_t *ppu) {
   bool rendering =
-    (ppu->scanline < SB_PPU_VISIBLE_SCANLINES || ppu->scanline == SB_PPU_NTSC_SCANLINES - 1) &&
-    (ppu->ppumask & (SB_PPUMASK_SHOW_BG | SB_PPUMASK_SHOW_SPR)) != 0;
+      (ppu->scanline < SB_PPU_VISIBLE_SCANLINES ||
+       ppu->scanline == SB_PPU_NTSC_SCANLINES - 1) &&
+      (ppu->ppumask & (SB_PPUMASK_SHOW_BG | SB_PPUMASK_SHOW_SPR)) != 0;
 
   // Compute max dots for this scanline early so pre-render reload can use it.
   // NTSC odd frame quirk: pre-render scanline runs 340 dots instead of 341
@@ -233,7 +242,8 @@ void sb_ppu_tick(sb_ppu_t* ppu) {
     max_dot = SB_PPU_DOTS_PER_SCANLINE - 1;
 
   // Pixel-by-pixel rendering: render one pixel per dot.
-  if (rendering && ppu->scanline < SB_PPU_VISIBLE_SCANLINES && ppu->dot >= 1 && ppu->dot <= 256) {
+  if (rendering && ppu->scanline < SB_PPU_VISIBLE_SCANLINES && ppu->dot >= 1 &&
+      ppu->dot <= 256) {
     sb_ppu_render_pixel(ppu);
   }
 
@@ -241,19 +251,16 @@ void sb_ppu_tick(sb_ppu_t* ppu) {
   // outputs the palette byte at the current VRAM address (v) for each
   // pixel. This is used by demos like full_palette.nes.
   // Render one pixel per dot during the visible portion (dots 1-256).
-  if (!rendering && ppu->scanline < SB_PPU_VISIBLE_SCANLINES && ppu->dot >= 1 && ppu->dot <= 256) {
+  if (!rendering && ppu->scanline < SB_PPU_VISIBLE_SCANLINES && ppu->dot >= 1 &&
+      ppu->dot <= 256) {
     int x = ppu->dot - 1;
+
     uint16_t palette_addr = ppu->v & 0x3FFF;
 
     if (palette_addr >= 0x3F00) {
-      // Address is in palette range: output the palette value at this address.
-      // Apply the same mirroring logic as ppu_real_addr.
-      uint8_t idx = palette_addr & 0x1F;
-      if ((idx & 0x13) == 0x10)
-        idx ^= 0x10;
-      ppu->framebuffer[ppu->scanline * 256 + x] = ppu->palette[idx];
+      ppu->framebuffer[ppu->scanline * 256 + x] =
+          ppu->palette[ppu_mirror_palette_idx(palette_addr & 0x1F)];
     } else {
-      // Address is not in palette range: output backdrop color.
       ppu->framebuffer[ppu->scanline * 256 + x] = ppu->palette[0];
     }
   }
@@ -266,22 +273,20 @@ void sb_ppu_tick(sb_ppu_t* ppu) {
 
     // Edge-triggered NMI: fires when PPUCTRL NMI enable AND VBlank
     // are both set on the rising edge.
-    bool nmi_now =
-      (ppu->ppuctrl & SB_PPUCTRL_NMI) != 0 && (ppu->ppustatus & SB_PPUSTATUS_VBLANK) != 0;
-    if (nmi_now && !ppu->nmi_previous)
-      ppu->nmi_pending = true;
-    ppu->nmi_previous = nmi_now;
+    ppu_check_nmi_edge(ppu);
   }
 
   // Pre-render scanline (261): clear flags at start
   if (ppu->scanline == SB_PPU_NTSC_SCANLINES - 1 && ppu->dot == 1) {
-    ppu->ppustatus &= ~(SB_PPUSTATUS_VBLANK | SB_PPUSTATUS_SPRITE0_HIT | SB_PPUSTATUS_OVERFLOW);
+    ppu->ppustatus &= ~(SB_PPUSTATUS_VBLANK | SB_PPUSTATUS_SPRITE0_HIT |
+                        SB_PPUSTATUS_OVERFLOW);
     ppu->nmi_previous = false; // VBlank going low resets edge detection
     ppu->vblank_clear_pending = false;
   }
 
   // Y increment at dot 256 of visible scanlines
-  if (rendering && ppu->scanline < SB_PPU_VISIBLE_SCANLINES && ppu->dot == 256) {
+  if (rendering && ppu->scanline < SB_PPU_VISIBLE_SCANLINES &&
+      ppu->dot == 256) {
     if ((ppu->v & 0x7000) != 0x7000) {
       ppu->v += 0x1000;
     } else {
@@ -306,9 +311,8 @@ void sb_ppu_tick(sb_ppu_t* ppu) {
   }
 
   // Pre-render scanline dots 280 to 304: reload vertical bits from t to v
-  if (
-    rendering && ppu->scanline == SB_PPU_NTSC_SCANLINES - 1 && ppu->dot >= 280 && ppu->dot <= 304
-  ) {
+  if (rendering && ppu->scanline == SB_PPU_NTSC_SCANLINES - 1 &&
+      ppu->dot >= 280 && ppu->dot <= 304) {
     ppu->v = (ppu->v & ~0x7BE0) | (ppu->t & 0x7BE0);
   }
 
@@ -327,7 +331,7 @@ void sb_ppu_tick(sb_ppu_t* ppu) {
 }
 
 // OAM DMA
-void sb_ppu_oam_dma_start(sb_ppu_t* ppu, uint8_t page) {
+void sb_ppu_oam_dma_start(sb_ppu_t *ppu, uint8_t page) {
   ppu->dma_page = page;
   ppu->dma_offset = 0;
   ppu->dma_dummy = true;
@@ -335,7 +339,7 @@ void sb_ppu_oam_dma_start(sb_ppu_t* ppu, uint8_t page) {
 }
 
 // Init
-void sb_ppu_init(sb_ppu_t* ppu, sb_cartridge_t* cart) {
+void sb_ppu_init(sb_ppu_t *ppu, sb_cartridge_t *cart) {
   memset(ppu, 0, sizeof(*ppu));
   ppu->cartridge = cart;
   ppu->scanline = SB_PPU_NTSC_SCANLINES - 1; // start at pre-render
@@ -345,4 +349,4 @@ void sb_ppu_init(sb_ppu_t* ppu, sb_cartridge_t* cart) {
 }
 
 // Framebuffer Access
-uint8_t* sb_ppu_get_framebuffer(sb_ppu_t* ppu) { return ppu->framebuffer; }
+uint8_t *sb_ppu_get_framebuffer(sb_ppu_t *ppu) { return ppu->framebuffer; }
