@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <string.h>
 void sb_nes_init(sb_nes_t* nes) {
+
   memset(nes, 0, sizeof(*nes));
 
   // Wire the cartridge into the bus
@@ -85,8 +86,10 @@ void sb_nes_frame(sb_nes_t* nes) {
 
   for (int scanline = 0; scanline < SB_PPU_NTSC_SCANLINES; scanline++) {
     int dots = SB_PPU_DOTS_PER_SCANLINE;
-    if (scanline == SB_PPU_NTSC_SCANLINES - 1 && nes->ppu.odd_frame &&
-        (nes->ppu.ppumask & (SB_PPUMASK_SHOW_BG | SB_PPUMASK_SHOW_SPR)))
+    if (
+      scanline == SB_PPU_NTSC_SCANLINES - 1 && nes->ppu.odd_frame &&
+      (nes->ppu.ppumask & (SB_PPUMASK_SHOW_BG | SB_PPUMASK_SHOW_SPR))
+    )
       dots = SB_PPU_DOTS_PER_SCANLINE - 1;
 
     for (int dot = 0; dot < dots; dot++) {

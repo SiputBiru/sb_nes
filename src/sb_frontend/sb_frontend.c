@@ -43,8 +43,8 @@ static void render_frame(SDL_Renderer* renderer, sb_nes_t* nes, int scale) {
   static uint32_t pixels[256 * 240];
 
   if (!texture) {
-    texture = SDL_CreateTexture(
-      renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, 256, 240);
+    texture =
+      SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, 256, 240);
   }
 
   uint8_t* fb = sb_ppu_get_framebuffer(&nes->ppu);
@@ -59,7 +59,7 @@ static void render_frame(SDL_Renderer* renderer, sb_nes_t* nes, int scale) {
   SDL_RenderPresent(renderer);
 }
 
-int sb_frontend_run(sb_frontend_config_t* config) {
+int sb_frontend_run(sb_nes_t* nes, sb_frontend_config_t* config) {
   // Init SDL3
   if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS)) {
     fprintf(stderr, "SDL_Init error: %s\n", SDL_GetError());
@@ -86,12 +86,7 @@ int sb_frontend_run(sb_frontend_config_t* config) {
     return 1;
   }
 
-  // Init NES
-  sb_nes_t nes;
-  memset(&nes, 0, sizeof(nes));
-  sb_nes_init(&nes);
-
-  if (!sb_nes_load_rom(&nes, config->rom_path)) {
+  if (!sb_nes_load_rom(nes, config->rom_path)) {
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
     SDL_Quit();
@@ -111,13 +106,13 @@ int sb_frontend_run(sb_frontend_config_t* config) {
     }
 
     // Read controller
-    sb_nes_set_buttons(&nes, read_controller());
+    sb_nes_set_buttons(nes, read_controller());
 
     // Run one frame
-    sb_nes_frame(&nes);
+    sb_nes_frame(nes);
 
     // Render
-    render_frame(renderer, &nes, config->window_scale);
+    render_frame(renderer, nes, config->window_scale);
 
     // ~60 FPS cap
     SDL_Delay(16);
