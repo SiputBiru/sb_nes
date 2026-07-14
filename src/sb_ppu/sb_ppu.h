@@ -129,4 +129,8 @@ void sb_ppu_render_pixel(sb_ppu_t *ppu);
 uint8_t sb_ppu_vram_read(sb_ppu_t *ppu, uint16_t addr);
 void sb_ppu_vram_write(sb_ppu_t *ppu, uint16_t addr, uint8_t val);
 
+// Apply NES palette mirroring: $3F10/$3F14/$3F18/$3F1C map to
+// $3F00/$3F04/$3F08/$3F0C. Input is a 5-bit palette index (0-31).
+uint8_t ppu_mirror_palette_idx(uint8_t addr);
+
 #endif

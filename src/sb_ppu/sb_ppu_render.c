@@ -72,6 +72,17 @@ void sb_ppu_render_pixel(sb_ppu_t *ppu) {
 
   bool bg_enabled = (ppu->ppumask & SB_PPUMASK_SHOW_BG) != 0;
   bool spr_enabled = (ppu->ppumask & SB_PPUMASK_SHOW_SPR) != 0;
+
+  if (!bg_enabled && !spr_enabled) {
+    uint16_t addr = ppu->v & 0x3FFF;
+    if (addr >= 0x3F00)
+      ppu->framebuffer[fb_index] =
+          ppu->palette[ppu_mirror_palette_idx(addr & 0x1F)];
+    else
+      ppu->framebuffer[fb_index] = ppu->palette[0];
+    return; // skip all the rendering logic
+  }
+
   bool show_bg_left = (ppu->ppumask & SB_PPUMASK_SHOW_BG_LEFT) != 0;
   bool show_spr_left = (ppu->ppumask & SB_PPUMASK_SHOW_SPR_LEFT) != 0;
 

@@ -3,7 +3,7 @@
 
 // Apply NES palette mirroring: $3F10/$3F14/$3F18/$3F1C map to
 // $3F00/$3F04/$3F08/$3F0C. Input is a 5-bit palette index (0-31).
-static inline uint8_t ppu_mirror_palette_idx(uint8_t idx) {
+uint8_t ppu_mirror_palette_idx(uint8_t idx) {
   if ((idx & 0x13) == 0x10)
     idx ^= 0x10;
   return idx;
@@ -241,28 +241,10 @@ void sb_ppu_tick(sb_ppu_t *ppu) {
   if (ppu->scanline == SB_PPU_NTSC_SCANLINES - 1 && ppu->odd_frame && rendering)
     max_dot = SB_PPU_DOTS_PER_SCANLINE - 1;
 
-  // Pixel-by-pixel rendering: render one pixel per dot.
-  if (rendering && ppu->scanline < SB_PPU_VISIBLE_SCANLINES && ppu->dot >= 1 &&
+  // Render one pixel per dot (handles both rendering and non-rendering mode)
+  if (ppu->scanline < SB_PPU_VISIBLE_SCANLINES && ppu->dot >= 1 &&
       ppu->dot <= 256) {
     sb_ppu_render_pixel(ppu);
-  }
-
-  // Direct color control mode: when rendering is disabled, the PPU
-  // outputs the palette byte at the current VRAM address (v) for each
-  // pixel. This is used by demos like full_palette.nes.
-  // Render one pixel per dot during the visible portion (dots 1-256).
-  if (!rendering && ppu->scanline < SB_PPU_VISIBLE_SCANLINES && ppu->dot >= 1 &&
-      ppu->dot <= 256) {
-    int x = ppu->dot - 1;
-
-    uint16_t palette_addr = ppu->v & 0x3FFF;
-
-    if (palette_addr >= 0x3F00) {
-      ppu->framebuffer[ppu->scanline * 256 + x] =
-          ppu->palette[ppu_mirror_palette_idx(palette_addr & 0x1F)];
-    } else {
-      ppu->framebuffer[ppu->scanline * 256 + x] = ppu->palette[0];
-    }
   }
 
   // VBlank start at scanline 241, dot 1.
