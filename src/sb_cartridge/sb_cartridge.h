@@ -49,17 +49,20 @@ typedef struct sb_cartridge_t {
 } sb_cartridge_t;
 
 // Load ROM from a raw byte buffer (for tests / embedded ROMs).
-sb_cartridge_result_t sb_cartridge_load(sb_cartridge_t* cart, const uint8_t* data, size_t size);
+sb_cartridge_result_t sb_cartridge_load(sb_cartridge_t *cart,
+                                        const uint8_t *data, size_t size);
 
 // Load ROM from a file path.
-sb_cartridge_result_t sb_cartridge_load_from_file(sb_cartridge_t* cart, const char* path);
+sb_cartridge_result_t sb_cartridge_load_from_file(sb_cartridge_t *cart,
+                                                  const char *path);
 
 // NROM mapper operations (called by the bus)
-uint8_t sb_cartridge_read(sb_cartridge_t* cart, uint16_t cpu_addr);
-void sb_cartridge_write(sb_cartridge_t* cart, uint16_t cpu_addr, uint8_t val);
+uint8_t sb_cartridge_read(sb_cartridge_t *cart, uint16_t cpu_addr);
+void sb_cartridge_write(sb_cartridge_t *cart, uint16_t cpu_addr, uint8_t val);
 
 // PPU reads CHR through this (Phase 3)
-uint8_t sb_cartridge_read_chr(sb_cartridge_t* cart, uint16_t ppu_addr);
-void sb_cartridge_write_chr(sb_cartridge_t* cart, uint16_t ppu_addr, uint8_t val);
+uint8_t sb_cartridge_read_chr(sb_cartridge_t *cart, uint16_t ppu_addr);
+void sb_cartridge_write_chr(sb_cartridge_t *cart, uint16_t ppu_addr,
+                            uint8_t val);
 
 #endif

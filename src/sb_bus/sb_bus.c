@@ -2,7 +2,7 @@
 #include "../sb_cartridge/sb_cartridge.h"
 #include "../sb_ppu/sb_ppu.h"
 
-uint8_t sb_bus_read(sb_bus_t* bus, uint16_t addr) {
+uint8_t sb_bus_read(sb_bus_t *bus, uint16_t addr) {
   switch (addr >> 13) {
   case 0: // $0000-$1FFF: WRAM (2KB, mirrored every 2KB)
     bus->last_read = bus->wram[addr & 0x07FF];
@@ -59,7 +59,7 @@ uint8_t sb_bus_read(sb_bus_t* bus, uint16_t addr) {
   return bus->last_read;
 }
 
-uint8_t sb_bus_write(sb_bus_t* bus, uint16_t addr, uint8_t val) {
+uint8_t sb_bus_write(sb_bus_t *bus, uint16_t addr, uint8_t val) {
   switch (addr >> 13) {
   case 0: // $0000-$1FFF: WRAM
     bus->wram[addr & 0x07FF] = val;

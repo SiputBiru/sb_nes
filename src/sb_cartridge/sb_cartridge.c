@@ -3,7 +3,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-sb_cartridge_result_t sb_cartridge_load(sb_cartridge_t* cart, const uint8_t* data, size_t size) {
+sb_cartridge_result_t sb_cartridge_load(sb_cartridge_t *cart,
+                                        const uint8_t *data, size_t size) {
   if (size < 16)
     return SB_CARTRIDGE_ERR_BAD_MAGIC;
 
@@ -33,7 +34,8 @@ sb_cartridge_result_t sb_cartridge_load(sb_cartridge_t* cart, const uint8_t* dat
   if (flags_byte1 & 0x08) {
     cart->mirroring = SB_MIRROR_FOUR_SCREEN;
   } else {
-    cart->mirroring = (flags_byte1 & 0x01) ? SB_MIRROR_VERTICAL : SB_MIRROR_HORIZONTAL;
+    cart->mirroring =
+        (flags_byte1 & 0x01) ? SB_MIRROR_VERTICAL : SB_MIRROR_HORIZONTAL;
   }
   cart->battery_backed = (flags_byte1 & 0x02) != 0;
 
@@ -43,7 +45,8 @@ sb_cartridge_result_t sb_cartridge_load(sb_cartridge_t* cart, const uint8_t* dat
     offset += 512;
 
   // PRG-RAM size
-  cart->prg_ram_size = (prg_ram_units == 0) ? 8192 : (size_t)prg_ram_units * 8192;
+  cart->prg_ram_size =
+      (prg_ram_units == 0) ? 8192 : (size_t)prg_ram_units * 8192;
   if (cart->prg_ram_size > SB_PRG_RAM_MAX)
     cart->prg_ram_size = SB_PRG_RAM_MAX;
 
@@ -87,8 +90,9 @@ sb_cartridge_result_t sb_cartridge_load(sb_cartridge_t* cart, const uint8_t* dat
   return SB_CARTRIDGE_OK;
 }
 
-sb_cartridge_result_t sb_cartridge_load_from_file(sb_cartridge_t* cart, const char* path) {
-  FILE* fp = fopen(path, "rb");
+sb_cartridge_result_t sb_cartridge_load_from_file(sb_cartridge_t *cart,
+                                                  const char *path) {
+  FILE *fp = fopen(path, "rb");
   if (!fp)
     return SB_CARTRIDGE_ERR_BAD_FILE;
 
@@ -103,7 +107,7 @@ sb_cartridge_result_t sb_cartridge_load_from_file(sb_cartridge_t* cart, const ch
   }
 
   // Read entire file into temp buffer
-  uint8_t* buf = malloc((size_t)fsize);
+  uint8_t *buf = malloc((size_t)fsize);
   if (!buf) {
     fclose(fp);
     return SB_CARTRIDGE_ERR_BAD_FILE;
@@ -122,7 +126,7 @@ sb_cartridge_result_t sb_cartridge_load_from_file(sb_cartridge_t* cart, const ch
   return result;
 }
 
-uint8_t sb_cartridge_read(sb_cartridge_t* cart, uint16_t addr) {
+uint8_t sb_cartridge_read(sb_cartridge_t *cart, uint16_t addr) {
   // CPU address space $4020-$FFFF
 
   if (addr < 0x6000) {
@@ -149,7 +153,7 @@ uint8_t sb_cartridge_read(sb_cartridge_t* cart, uint16_t addr) {
   return 0;
 }
 
-void sb_cartridge_write(sb_cartridge_t* cart, uint16_t addr, uint8_t val) {
+void sb_cartridge_write(sb_cartridge_t *cart, uint16_t addr, uint8_t val) {
   // NROM writes are ignored for PRG-ROM, but SRAM writes work
   if (addr >= 0x6000 && addr < 0x8000 && cart->prg_ram_size > 0) {
     size_t index = (addr - 0x6000) % cart->prg_ram_size;
@@ -158,7 +162,7 @@ void sb_cartridge_write(sb_cartridge_t* cart, uint16_t addr, uint8_t val) {
   // Writes to $8000-$FFFF are no-ops for NROM (no mapper regs)
 }
 
-uint8_t sb_cartridge_read_chr(sb_cartridge_t* cart, uint16_t ppu_addr) {
+uint8_t sb_cartridge_read_chr(sb_cartridge_t *cart, uint16_t ppu_addr) {
   // PPU address space $0000-$1FFF
   if (ppu_addr < cart->chr_rom_size) {
     return cart->chr_rom[ppu_addr];
@@ -166,7 +170,8 @@ uint8_t sb_cartridge_read_chr(sb_cartridge_t* cart, uint16_t ppu_addr) {
   return 0;
 }
 
-void sb_cartridge_write_chr(sb_cartridge_t* cart, uint16_t ppu_addr, uint8_t val) {
+void sb_cartridge_write_chr(sb_cartridge_t *cart, uint16_t ppu_addr,
+                            uint8_t val) {
   // Only writable if CHR-RAM
   if (cart->chr_ram && ppu_addr < cart->chr_rom_size) {
     cart->chr_rom[ppu_addr] = val;
