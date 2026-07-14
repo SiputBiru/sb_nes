@@ -1,0 +1,32 @@
+---
+Language: C
+BasedOnStyle: LLVM
+Standard: c99
+
+UseTab: Never
+TabWidth: 2
+IndentWidth: 2
+ContinuationIndentWidth: 2
+Cpp11BracedListStyle: false
+AlignAfterOpenBracket: BlockIndent
+AlignConsecutiveAssignments: None
+AlignEscapedNewlines: DontAlign
+BinPackParameters: OnePerLine
+BinPackArguments: false
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterClass: true
+  AfterControlStatement: Never
+  AfterEnum: false
+  AfterFunction: false
+  AfterNamespace: false
+  AfterStruct: false
+  AfterUnion: false
+  BeforeElse: false
+AllowAllArgumentsOnNextLine: false
+AllowAllParametersOfDeclarationOnNextLine: false
+AlignTrailingComments: true
+ColumnLimit: 100
+PointerAlignment: Left
+SortIncludes: true
+...
