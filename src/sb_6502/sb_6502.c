@@ -1043,37 +1043,30 @@ void sb_6502_init_opcodes(void) {
       (sb_6502_opcode_t){"RRA", 2, 8, false, addr_indirect_indexed, op_RRA};
 }
 
+static void push_interrupt(sb_6502_t *cpu, sb_bus_t *bus, uint16_t vector) {
+  sb_bus_write(bus, 0x0100 | (uint16_t)cpu->s, (uint8_t)(cpu->pc >> 8));
+  cpu->s--;
+  sb_bus_write(bus, 0x0100 | (uint16_t)cpu->s, (uint8_t)cpu->pc);
+  cpu->s--;
+  sb_bus_write(bus, 0x0100 | (uint16_t)cpu->s, cpu->p & ~SB_6502_BRK);
+  cpu->s--;
+  cpu->p |= SB_6502_INTERRUPT;
+  uint8_t lo = sb_bus_read(bus, vector);
+  uint8_t hi = sb_bus_read(bus, vector + 1);
+  cpu->pc = ((uint16_t)hi << 8) | lo;
+  cpu->cycles += 7;
+}
+
 void sb_6502_step(sb_6502_t *cpu, sb_bus_t *bus) {
   // Handle interrupts
   if (cpu->nmi_pending) {
     cpu->nmi_pending = false;
-    sb_bus_write(bus, 0x0100 | (uint16_t)cpu->s, (uint8_t)(cpu->pc >> 8));
-    cpu->s--;
-    sb_bus_write(bus, 0x0100 | (uint16_t)cpu->s, (uint8_t)cpu->pc);
-    cpu->s--;
-    sb_bus_write(bus, 0x0100 | (uint16_t)cpu->s, cpu->p & ~SB_6502_BRK);
-    cpu->s--;
-    cpu->p |= SB_6502_INTERRUPT;
-    uint8_t lo = sb_bus_read(bus, 0xFFFA);
-    uint8_t hi = sb_bus_read(bus, 0xFFFB);
-    cpu->pc = ((uint16_t)hi << 8) | lo;
-    cpu->cycles += 7;
+    push_interrupt(cpu, bus, 0xFFFA);
     return;
   }
-
   if (cpu->irq_pending && !(cpu->p & SB_6502_INTERRUPT)) {
     cpu->irq_pending = false;
-    sb_bus_write(bus, 0x0100 | (uint16_t)cpu->s, (uint8_t)(cpu->pc >> 8));
-    cpu->s--;
-    sb_bus_write(bus, 0x0100 | (uint16_t)cpu->s, (uint8_t)cpu->pc);
-    cpu->s--;
-    sb_bus_write(bus, 0x0100 | (uint16_t)cpu->s, cpu->p & ~SB_6502_BRK);
-    cpu->s--;
-    cpu->p |= SB_6502_INTERRUPT;
-    uint8_t lo = sb_bus_read(bus, 0xFFFE);
-    uint8_t hi = sb_bus_read(bus, 0xFFFF);
-    cpu->pc = ((uint16_t)hi << 8) | lo;
-    cpu->cycles += 7;
+    push_interrupt(cpu, bus, 0xFFFE);
     return;
   }
 
