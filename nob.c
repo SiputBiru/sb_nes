@@ -20,7 +20,7 @@
 #define CORE_SOURCES                                                           \
   SRC_FOLDER "sb_6502/sb_6502.c", SRC_FOLDER "sb_6502/sb_6502_addrmodes.c",    \
       SRC_FOLDER "sb_bus/sb_bus.c", SRC_FOLDER "sb_cartridge/sb_cartridge.c",  \
-      SRC_FOLDER "sb_cartridge/sb_mapper_nrom.c" SRC_FOLDER "sb_nes.c",        \
+      SRC_FOLDER "sb_cartridge/sb_mapper_nrom.c", SRC_FOLDER "sb_nes.c",       \
       SRC_FOLDER "sb_ppu/sb_ppu.c", SRC_FOLDER "sb_ppu/sb_ppu_render.c"
 
 static int build_and_run(Nob_Cmd *cmd, const char *output,
@@ -155,6 +155,32 @@ static int build_emulator(void) {
   return 0;
 }
 
+static int build_mingw(void) {
+  Nob_Cmd cmd = {0};
+  nob_cmd_append(&cmd, CORE_SOURCES);
+  nob_cmd_append(&cmd, SRC_FOLDER "sb_frontend/sb_frontend.c");
+  nob_cmd_append(&cmd, "sb_main.c");
+
+  Nob_Cmd front = {0};
+  nob_cmd_append(&front, "x86_64-w64-mingw32-gcc");
+  nob_cmd_append(&front, "-std=c99", "-Wall", "-Wextra", "-Wpedantic",
+                 "-Wshadow", "-Wno-unused-parameter", "-O2");
+  nob_cmd_append(&front, "-I/usr/x86_64-w64-mingw32/include");
+  nob_cc_output(&front, BUILD_FOLDER "sb_nes.exe");
+  for (int i = 0; i < cmd.count; i++)
+    nob_cmd_append(&front, cmd.items[i]);
+  nob_cmd_append(&front, "-L/usr/x86_64-w64-mingw32/lib");
+  nob_cmd_append(&front, "-lSDL3", "-mwindows");
+  nob_cmd_append(&front, "-lm", "-lkernel32", "-luser32", "-lgdi32", "-lwinmm",
+                 "-limm32", "-lole32", "-loleaut32", "-lversion", "-luuid",
+                 "-ladvapi32", "-lsetupapi", "-lshell32", "-ldinput8");
+  cmd = front;
+
+  if (!nob_cmd_run(&cmd))
+    return 1;
+  return 0;
+}
+
 static int build_branch_timing(char *last_line, int last_line_size) {
   return build_blargg_test("test_branch_timing",
                            TEST_FOLDER "blargg/test_branch_timing.c", last_line,
@@ -274,6 +300,10 @@ int main(int argc, char **argv) {
       if (build_instr_v5(NULL, 0))
         return 1;
       return 0;
+    }
+
+    if (strcmp(argv[1], "mingw") == 0) {
+      return build_mingw();
     }
   }
 
