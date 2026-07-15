@@ -1,4 +1,5 @@
 #include "sb_cartridge.h"
+#include "sb_mapper.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -27,8 +28,8 @@ sb_cartridge_result_t sb_cartridge_load(sb_cartridge_t *cart,
   if ((flags_byte2 & 0x0C) == 0x08)
     return SB_CARTRIDGE_ERR_NES20;
 
-  if (mapper_id != 0)
-    return SB_CARTRIDGE_ERR_UNSUPPORTED_MAPPER;
+  // if (mapper_id != 0)
+  //   return SB_CARTRIDGE_ERR_UNSUPPORTED_MAPPER;
 
   // Mirroring
   if (flags_byte1 & 0x08) {
@@ -85,6 +86,25 @@ sb_cartridge_result_t sb_cartridge_load(sb_cartridge_t *cart,
     cart->chr_ram = true;
     for (size_t i = 0; i < SB_CHR_RAM_SIZE; i++)
       cart->chr_rom[i] = 0;
+  }
+
+  cart->mapper.prg_rom = cart->prg_rom;
+  cart->mapper.prg_rom_size = cart->prg_rom_size;
+  cart->mapper.chr_rom = cart->chr_rom;
+  cart->mapper.chr_rom_size = cart->chr_rom_size;
+  cart->mapper.prg_ram = cart->prg_ram;
+  cart->mapper.prg_ram_size = cart->prg_ram_size;
+  cart->mapper.mapper_id = cart->mapper_id;
+  cart->mapper.mirroring = cart->mirroring;
+
+  switch (cart->mapper_id) {
+  case 0:
+    sb_mapper_nrom_init(&cart->mapper);
+    break;
+    // TODO: case 1 (sb_mapper_mmc1_init)
+    // TODO: case 2 (sb_mapper_uxrom_init)
+  default:
+    return SB_CARTRIDGE_ERR_UNSUPPORTED_MAPPER;
   }
 
   return SB_CARTRIDGE_OK;

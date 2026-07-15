@@ -64,4 +64,9 @@ typedef struct sb_mapper_t {
   void *extension;
 } sb_mapper_t;
 
+// init functions for each mapper, called by sb_cartridge_load()
+void sb_mapper_nrom_init(sb_mapper_t *mapper);
+void sb_mapper_uxrom_init(sb_mapper_t *mapper);
+void sb_mapper_mmc1_init(sb_mapper_t *mapper);
+
 #endif // !SB_MAPPER

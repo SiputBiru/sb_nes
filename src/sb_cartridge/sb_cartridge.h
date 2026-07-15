@@ -28,15 +28,17 @@ typedef struct sb_cartridge_t {
   uint8_t prg_ram[SB_PRG_RAM_MAX];
   size_t prg_ram_size;
 
-  // Cartridge properties (parsed from header)
+  // Cartridge properties
   uint8_t mapper_id;
-  sb_mapper_t mapper;
-  // sb_mirroring_t mirroring;
+  sb_mapper_t mapper;       // mapper interface
+  sb_mirroring_t mirroring; // will be removed later
+
   bool battery_backed;
   bool chr_ram; // true: chr_rom buffer is CHR-RAM (writable)
                 // false: chr_rom buffer is CHR-ROM (read-only)
 
   // PRG-ROM mirroring flag for NROM
+  // later will be removed
   bool prg_mirror; // true: $C000-$FFFF mirrors $8000-$BFFF (16KB PRG)
                    // false: $C000-$FFFF is the second 16KB (32KB PRG)
 } sb_cartridge_t;
