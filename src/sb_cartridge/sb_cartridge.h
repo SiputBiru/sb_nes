@@ -5,17 +5,13 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "./sb_mapper.h"
+
 // Constants
 #define SB_PRG_ROM_MAX (512U * 1024U) // 512 KB max
 #define SB_CHR_ROM_MAX (256U * 1024U) // 256 KB max
 #define SB_PRG_RAM_MAX (32U * 1024U)  // 32 KB max
 #define SB_CHR_RAM_SIZE (8U * 1024U)  // 8KB standard CHR-RAM
-
-typedef enum {
-  SB_MIRROR_HORIZONTAL = 0,
-  SB_MIRROR_VERTICAL = 1,
-  SB_MIRROR_FOUR_SCREEN = 2,
-} sb_mirroring_t;
 
 typedef enum {
   SB_CARTRIDGE_OK = 0,
@@ -38,7 +34,8 @@ typedef struct sb_cartridge_t {
 
   // Cartridge properties (parsed from header)
   uint8_t mapper_id;
-  sb_mirroring_t mirroring;
+  sb_mapper_t mapper;
+  // sb_mirroring_t mirroring;
   bool battery_backed;
   bool chr_ram; // true: chr_rom buffer is CHR-RAM (writable)
                 // false: chr_rom buffer is CHR-ROM (read-only)
