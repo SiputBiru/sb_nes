@@ -36,6 +36,9 @@ typedef struct sb_mapper_t {
 
   // Cartridge properties (parsed from iNES header, cached here for mappers).
   uint8_t mapper_id;
+
+  // true: $C000-$FFFF mirrors $8000-$BFFF (16KB PRG)
+  // false: $C000-$FFFF is the second 16KB (32KB PRG)
   sb_mirroring_t mirroring;
   bool chr_ram;
 

@@ -33,9 +33,9 @@ sb_cartridge_result_t sb_cartridge_load(sb_cartridge_t *cart,
 
   // Mirroring
   if (flags_byte1 & 0x08) {
-    cart->mirroring = SB_MIRROR_FOUR_SCREEN;
+    cart->mapper.mirroring = SB_MIRROR_FOUR_SCREEN;
   } else {
-    cart->mirroring =
+    cart->mapper.mirroring =
         (flags_byte1 & 0x01) ? SB_MIRROR_VERTICAL : SB_MIRROR_HORIZONTAL;
   }
   cart->battery_backed = (flags_byte1 & 0x02) != 0;
@@ -66,7 +66,7 @@ sb_cartridge_result_t sb_cartridge_load(sb_cartridge_t *cart,
   offset += prg_size;
 
   // NROM mirror flag: if only 16KB PRG, mirror $8000-$BFFF -> $C000-$FFFF
-  cart->prg_mirror = (prg_size <= 16384);
+  // (handled by nrom_read() via PRG_banks <= 1)
 
   // Load CHR-ROM (or allocate CHR-RAM)
   size_t chr_size = (size_t)chr_units * 8192;
@@ -95,7 +95,7 @@ sb_cartridge_result_t sb_cartridge_load(sb_cartridge_t *cart,
   cart->mapper.prg_ram = cart->prg_ram;
   cart->mapper.prg_ram_size = cart->prg_ram_size;
   cart->mapper.mapper_id = cart->mapper_id;
-  cart->mapper.mirroring = cart->mirroring;
+  cart->mapper.chr_ram = cart->chr_ram;
 
   switch (cart->mapper_id) {
   case 0:
@@ -144,57 +144,4 @@ sb_cartridge_result_t sb_cartridge_load_from_file(sb_cartridge_t *cart,
   sb_cartridge_result_t result = sb_cartridge_load(cart, buf, (size_t)fsize);
   free(buf);
   return result;
-}
-
-uint8_t sb_cartridge_read(sb_cartridge_t *cart, uint16_t addr) {
-  // CPU address space $4020-$FFFF
-
-  if (addr < 0x6000) {
-    return 0; // unmapped / expansion (open bus)
-  }
-
-  if (addr < 0x8000) {
-    // SRAM $6000-$7FFF
-    if (cart->prg_ram_size > 0) {
-      size_t index = (addr - 0x6000) % cart->prg_ram_size;
-      return cart->prg_ram[index];
-    }
-    return 0;
-  }
-
-  // PRG-ROM $8000-$FFFF
-  size_t index = (addr - 0x8000);
-  if (cart->prg_mirror) {
-    index = index % 16384; // mirror every 16KB
-  }
-  if (index < cart->prg_rom_size) {
-    return cart->prg_rom[index];
-  }
-  return 0;
-}
-
-void sb_cartridge_write(sb_cartridge_t *cart, uint16_t addr, uint8_t val) {
-  // NROM writes are ignored for PRG-ROM, but SRAM writes work
-  if (addr >= 0x6000 && addr < 0x8000 && cart->prg_ram_size > 0) {
-    size_t index = (addr - 0x6000) % cart->prg_ram_size;
-    cart->prg_ram[index] = val;
-  }
-  // Writes to $8000-$FFFF are no-ops for NROM (no mapper regs)
-}
-
-uint8_t sb_cartridge_read_chr(sb_cartridge_t *cart, uint16_t ppu_addr) {
-  // PPU address space $0000-$1FFF
-  if (ppu_addr < cart->chr_rom_size) {
-    return cart->chr_rom[ppu_addr];
-  }
-  return 0;
-}
-
-void sb_cartridge_write_chr(sb_cartridge_t *cart, uint16_t ppu_addr,
-                            uint8_t val) {
-  // Only writable if CHR-RAM
-  if (cart->chr_ram && ppu_addr < cart->chr_rom_size) {
-    cart->chr_rom[ppu_addr] = val;
-  }
-  // Writes to CHR-ROM are silently ignored (matches NES hardware behavior)
 }

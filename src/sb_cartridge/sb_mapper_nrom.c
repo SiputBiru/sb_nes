@@ -48,7 +48,7 @@ static uint8_t nrom_read(struct sb_mapper_t *m, uint16_t addr) {
 
 static void nrom_write(struct sb_mapper_t *m, uint16_t addr, uint8_t val) {
   // only SRAM is wriable, $0000-$FFFF writes are ignored (no mapper regs).
-  if (addr >= 0x6000 & addr < 0x8000 && m->prg_ram_size > 0) {
+  if (addr >= 0x6000 && addr < 0x8000 && m->prg_ram_size > 0) {
     size_t index = (addr - 0x6000) % m->prg_ram_size;
     m->prg_ram[index] = val;
   }

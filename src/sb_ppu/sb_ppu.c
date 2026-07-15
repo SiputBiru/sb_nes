@@ -33,7 +33,7 @@ static uint16_t ppu_real_addr(sb_ppu_t *ppu, uint16_t addr) {
     // Apply cartridge mirroring to map 4 nametable slots into 2KB VRAM.
     // VRAM page 0: vram[0x000-0x3FF], page 1: vram[0x400-0x7FF]
     if (ppu->cartridge) {
-      switch (ppu->cartridge->mirroring) {
+      switch (ppu->cartridge->mapper.mirroring) {
       case SB_MIRROR_VERTICAL:
         // NT0/NT1 → page 0, NT2/NT3 → page 1
         // Two unique pages arranged vertically (good for horizontal scrolling)
@@ -83,7 +83,7 @@ uint8_t sb_ppu_vram_read(sb_ppu_t *ppu, uint16_t addr) {
 
   // Pattern table: read from cartridge CHR
   if (ppu->cartridge)
-    return sb_cartridge_read_chr(ppu->cartridge, addr);
+    return ppu->cartridge->mapper.read_chr(&ppu->cartridge->mapper, addr);
   return 0;
 }
 
@@ -102,7 +102,7 @@ void sb_ppu_vram_write(sb_ppu_t *ppu, uint16_t addr, uint8_t val) {
 
   // Pattern table write: only if CHR-RAM
   if (ppu->cartridge)
-    sb_cartridge_write_chr(ppu->cartridge, addr, val);
+    ppu->cartridge->mapper.write_chr(&ppu->cartridge->mapper, addr, val);
 }
 
 // PPU Register Read

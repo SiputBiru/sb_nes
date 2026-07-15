@@ -91,7 +91,7 @@ uint8_t sb_bus_write(sb_bus_t *bus, uint16_t addr, uint8_t val) {
 
   default: // $6000-$FFFF: Cartridge
     if (bus->cartridge)
-      sb_cartridge_write(bus->cartridge, addr, val);
+      bus->cartridge->mapper.write(&bus->cartridge->mapper, addr, val);
     break;
   }
 

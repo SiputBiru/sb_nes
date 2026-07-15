@@ -30,17 +30,13 @@ typedef struct sb_cartridge_t {
 
   // Cartridge properties
   uint8_t mapper_id;
-  sb_mapper_t mapper;       // mapper interface
-  sb_mirroring_t mirroring; // will be removed later
+  sb_mapper_t mapper; // mapper interface
 
   bool battery_backed;
   bool chr_ram; // true: chr_rom buffer is CHR-RAM (writable)
                 // false: chr_rom buffer is CHR-ROM (read-only)
 
-  // PRG-ROM mirroring flag for NROM
-  // later will be removed
-  bool prg_mirror; // true: $C000-$FFFF mirrors $8000-$BFFF (16KB PRG)
-                   // false: $C000-$FFFF is the second 16KB (32KB PRG)
+  // bool prg_mirror;
 } sb_cartridge_t;
 
 // Load ROM from a raw byte buffer (for tests / embedded ROMs).
@@ -50,14 +46,5 @@ sb_cartridge_result_t sb_cartridge_load(sb_cartridge_t *cart,
 // Load ROM from a file path.
 sb_cartridge_result_t sb_cartridge_load_from_file(sb_cartridge_t *cart,
                                                   const char *path);
-
-// NROM mapper operations (called by the bus)
-uint8_t sb_cartridge_read(sb_cartridge_t *cart, uint16_t cpu_addr);
-void sb_cartridge_write(sb_cartridge_t *cart, uint16_t cpu_addr, uint8_t val);
-
-// PPU reads CHR through this (Phase 3)
-uint8_t sb_cartridge_read_chr(sb_cartridge_t *cart, uint16_t ppu_addr);
-void sb_cartridge_write_chr(sb_cartridge_t *cart, uint16_t ppu_addr,
-                            uint8_t val);
 
 #endif
