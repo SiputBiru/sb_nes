@@ -10,7 +10,7 @@ pacman:<br>
 
 <br>
 there is still no audio output stuff(APU).
-And currently only works with <a href="https://www.nesdev.org/wiki/Mapper" target="_blank" rel="noopener noreferrer">INES 1.0 mapper</a>
+Currently supports only iNES format ROMs with mapper 0 (NROM). NES 2.0 format and all bank-switching mappers (MMC1, MMC3, etc.) are not yet implemented.
 
 deps: 
 - [SDL3](https://github.com/libsdl-org/SDL) (need to be installed manually)
