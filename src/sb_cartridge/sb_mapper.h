@@ -15,9 +15,10 @@ struct sb_mapper_t;
 
 typedef uint8_t (*sb_mapper_read_fn)(struct sb_mapper_t *,
                                      uint16_t addr); // $6000-$FFFF
-typedef void (*sb_mapper_write_fn)(struct sb_mapper_t *, uint16_t addr);
-typedef uint8_t (*sb_mapper_read_chr_fn)(struct sb_mapper_t *, uint16_t addr,
-                                         uint8_t val); // PPU $0000-$1FFF
+typedef void (*sb_mapper_write_fn)(struct sb_mapper_t *, uint16_t addr,
+                                   uint8_t val);
+typedef uint8_t (*sb_mapper_read_chr_fn)(struct sb_mapper_t *,
+                                         uint16_t addr); // PPU $0000-$1FFF
 typedef void (*sb_mapper_write_chr_fn)(struct sb_mapper_t *, uint16_t addr,
                                        uint8_t val);
 typedef void (*sb_mapper_on_scanline_fn)(struct sb_mapper_t *); // for MMC3 IRQ
@@ -26,7 +27,7 @@ typedef void (*sb_mapper_reset_fn)(struct sb_mapper_t *);
 typedef struct sb_mapper_t {
   // Pointers to cartridge ROM data. Set by cartridge loader after ROM is
   // copied into the static arrays. Mappers read through these pointers.
-  uint8_t prg_rom;
+  uint8_t *prg_rom;
   size_t prg_rom_size;
   uint8_t *chr_rom;
   size_t chr_rom_size;

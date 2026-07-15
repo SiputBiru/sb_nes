@@ -1,10 +1,6 @@
 #ifndef SB_CARTRIDGE_H
 #define SB_CARTRIDGE_H
 
-#include <stdbool.h>
-#include <stddef.h>
-#include <stdint.h>
-
 #include "./sb_mapper.h"
 
 // Constants
