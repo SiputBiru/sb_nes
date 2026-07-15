@@ -3,6 +3,7 @@
 #include "../sb_ppu/sb_ppu.h"
 
 uint8_t sb_bus_read(sb_bus_t *bus, uint16_t addr) {
+  // split into 8KB regions
   switch (addr >> 13) {
   case 0: // $0000-$1FFF: WRAM (2KB, mirrored every 2KB)
     bus->last_read = bus->wram[addr & 0x07FF];
@@ -66,6 +67,7 @@ uint8_t sb_bus_read(sb_bus_t *bus, uint16_t addr) {
 }
 
 uint8_t sb_bus_write(sb_bus_t *bus, uint16_t addr, uint8_t val) {
+  // split into 8KB regions
   switch (addr >> 13) {
   case 0: // $0000-$1FFF: WRAM
     bus->wram[addr & 0x07FF] = val;
