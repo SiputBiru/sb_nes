@@ -2,13 +2,13 @@
 #include "sb_mapper.h"
 
 // forward declaration of func that implement NROM behavior
-static uint8_t nrom_read(struct sb_mapper_t *m, uint16_t addr);
-static void nrom_write(struct sb_mapper_t *m, uint16_t addr, uint8_t val);
-static uint8_t nrom_read_chr(struct sb_mapper_t *m, uint16_t addr);
-static void nrom_write_chr(struct sb_mapper_t *m, uint16_t addr, uint8_t val);
+static uint8_t nrom_read(struct sb_mapper_t* m, uint16_t addr);
+static void nrom_write(struct sb_mapper_t* m, uint16_t addr, uint8_t val);
+static uint8_t nrom_read_chr(struct sb_mapper_t* m, uint16_t addr);
+static void nrom_write_chr(struct sb_mapper_t* m, uint16_t addr, uint8_t val);
 
 // initialize mapper struct with NROM func pointers
-void sb_mapper_nrom_init(sb_mapper_t *m) {
+void sb_mapper_nrom_init(sb_mapper_t* m) {
   m->read = nrom_read;
   m->write = nrom_write;
   m->read_chr = nrom_read_chr;
@@ -21,7 +21,7 @@ void sb_mapper_nrom_init(sb_mapper_t *m) {
   m->CHR_banks = (uint16_t)(m->chr_rom_size / 0x2000);
 }
 
-static uint8_t nrom_read(struct sb_mapper_t *m, uint16_t addr) {
+static uint8_t nrom_read(struct sb_mapper_t* m, uint16_t addr) {
 
   if (addr < 0x6000) {
     return 0; // open bus / expansion area
@@ -46,17 +46,17 @@ static uint8_t nrom_read(struct sb_mapper_t *m, uint16_t addr) {
   return (index < m->prg_rom_size) ? m->prg_rom[index] : 0;
 }
 
-static void nrom_write(struct sb_mapper_t *m, uint16_t addr, uint8_t val) {
+static void nrom_write(struct sb_mapper_t* m, uint16_t addr, uint8_t val) {
   // only SRAM is wriable, $0000-$FFFF writes are ignored (no mapper regs).
   if (addr >= 0x6000 && addr < 0x8000 && m->prg_ram_size > 0) {
     size_t index = (addr - 0x6000) % m->prg_ram_size;
     m->prg_ram[index] = val;
   }
 }
-static uint8_t nrom_read_chr(struct sb_mapper_t *m, uint16_t addr) {
+static uint8_t nrom_read_chr(struct sb_mapper_t* m, uint16_t addr) {
   return (addr < m->chr_rom_size) ? m->chr_rom[addr] : 0;
 }
-static void nrom_write_chr(struct sb_mapper_t *m, uint16_t addr, uint8_t val) {
+static void nrom_write_chr(struct sb_mapper_t* m, uint16_t addr, uint8_t val) {
   if (m->chr_ram && addr < m->chr_rom_size) {
     m->chr_rom[addr] = val;
   }

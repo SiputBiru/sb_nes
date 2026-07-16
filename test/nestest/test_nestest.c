@@ -7,8 +7,7 @@
 int main(void) {
   // Load nestest ROM through the cartridge loader
   sb_cartridge_t cart;
-  sb_cartridge_result_t cr =
-      sb_cartridge_load_from_file(&cart, "test/nestest/nestest.nes");
+  sb_cartridge_result_t cr = sb_cartridge_load_from_file(&cart, "test/nestest/nestest.nes");
   if (cr != SB_CARTRIDGE_OK) {
     printf("ERROR: Could not load nestest.nes (error %d)\n", cr);
     return 1;
@@ -32,7 +31,7 @@ int main(void) {
   cpu.p = 0x24;
   cpu.cycles = 7;
 
-  FILE *log = fopen("test/nestest/nestest.log", "r");
+  FILE* log = fopen("test/nestest/nestest.log", "r");
   if (!log) {
     printf("ERROR: Could not open nestest.log\n");
     return 1;
@@ -59,23 +58,30 @@ int main(void) {
 
     // Build output string (register portion only)
     char our_output[256];
-    snprintf(our_output, sizeof(our_output),
-             "A:%02X X:%02X Y:%02X P:%02X SP:%02X CYC:%llu", cpu.a, cpu.x,
-             cpu.y, cpu.p, cpu.s, (unsigned long long)cpu.cycles);
+    snprintf(
+      our_output,
+      sizeof(our_output),
+      "A:%02X X:%02X Y:%02X P:%02X SP:%02X CYC:%llu",
+      cpu.a,
+      cpu.x,
+      cpu.y,
+      cpu.p,
+      cpu.s,
+      (unsigned long long)cpu.cycles
+    );
 
     // Find "A:" in the expected line
-    char *expected_regs = strstr(expected, "A:");
+    char* expected_regs = strstr(expected, "A:");
     if (expected_regs) {
       // Trim at "PPU:" (don't track PPU cycles yet)
-      char *ppu_pos = strstr(expected_regs, "PPU:");
+      char* ppu_pos = strstr(expected_regs, "PPU:");
       if (ppu_pos) {
         char expected_trimmed[256];
         size_t len = (size_t)(ppu_pos - expected_regs);
         strncpy(expected_trimmed, expected_regs, len);
         expected_trimmed[len] = '\0';
 
-        if (strncmp(our_output, expected_trimmed, strlen(expected_trimmed)) ==
-            0) {
+        if (strncmp(our_output, expected_trimmed, strlen(expected_trimmed)) == 0) {
           passed++;
         } else {
           failed++;

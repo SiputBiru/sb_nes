@@ -1,7 +1,7 @@
 #include "sb_nes.h"
 #include <stdio.h>
 #include <string.h>
-void sb_nes_init(sb_nes_t *nes) {
+void sb_nes_init(sb_nes_t* nes) {
 
   memset(nes, 0, sizeof(*nes));
 
@@ -18,9 +18,8 @@ void sb_nes_init(sb_nes_t *nes) {
   sb_6502_init_opcodes();
 }
 
-bool sb_nes_load_rom(sb_nes_t *nes, const char *path) {
-  sb_cartridge_result_t result =
-      sb_cartridge_load_from_file(&nes->cartridge, path);
+bool sb_nes_load_rom(sb_nes_t* nes, const char* path) {
+  sb_cartridge_result_t result = sb_cartridge_load_from_file(&nes->cartridge, path);
 
   switch (result) {
   case SB_CARTRIDGE_OK:
@@ -38,13 +37,15 @@ bool sb_nes_load_rom(sb_nes_t *nes, const char *path) {
     fprintf(stderr, "Error: '%s' is too large (>512KB PRG)\n", path);
     return false;
   case SB_CARTRIDGE_ERR_NES20:
-    fprintf(stderr, "Error: '%s' is NES 2.0 format (not supported yet)\n",
-            path);
+    fprintf(stderr, "Error: '%s' is NES 2.0 format (not supported yet)\n", path);
     return false;
   case SB_CARTRIDGE_ERR_UNSUPPORTED_MAPPER:
-    fprintf(stderr,
-            "Error: '%s' uses mapper %d (only NROM/mapper 0 supported)\n", path,
-            nes->cartridge.mapper.mapper_id);
+    fprintf(
+      stderr,
+      "Error: '%s' uses mapper %d (only NROM/mapper 0 supported)\n",
+      path,
+      nes->cartridge.mapper.mapper_id
+    );
     return false;
   default:
     fprintf(stderr, "Error: unknown error loading '%s'\n", path);
@@ -55,21 +56,28 @@ bool sb_nes_load_rom(sb_nes_t *nes, const char *path) {
   sb_6502_reset(&nes->cpu, &nes->bus);
 
   printf("Loaded: %s\n", path);
-  printf("  PRG-ROM: %zu KB (%s)\n", nes->cartridge.prg_rom_size / 1024,
-         nes->cartridge.mapper.PRG_banks <= 1 ? "mirrored" : "full");
-  printf("  CHR:      %zu KB (%s)\n", nes->cartridge.chr_rom_size / 1024,
-         nes->cartridge.chr_ram ? "RAM" : "ROM");
-  printf("  Mirror:   %s\n",
-         nes->cartridge.mapper.mirroring == SB_MIRROR_HORIZONTAL ? "horizontal"
-         : nes->cartridge.mapper.mirroring == SB_MIRROR_VERTICAL
-             ? "vertical"
-             : "four-screen");
+  printf(
+    "  PRG-ROM: %zu KB (%s)\n",
+    nes->cartridge.prg_rom_size / 1024,
+    nes->cartridge.mapper.PRG_banks <= 1 ? "mirrored" : "full"
+  );
+  printf(
+    "  CHR:      %zu KB (%s)\n",
+    nes->cartridge.chr_rom_size / 1024,
+    nes->cartridge.chr_ram ? "RAM" : "ROM"
+  );
+  printf(
+    "  Mirror:   %s\n",
+    nes->cartridge.mapper.mirroring == SB_MIRROR_HORIZONTAL ? "horizontal"
+    : nes->cartridge.mapper.mirroring == SB_MIRROR_VERTICAL ? "vertical"
+                                                            : "four-screen"
+  );
   printf("  Reset PC: $%04X\n", nes->cpu.pc);
 
   return true;
 }
 
-void sb_nes_frame(sb_nes_t *nes) {
+void sb_nes_frame(sb_nes_t* nes) {
   // Run one NTSC frame: 262 scanlines x 341 dots.
   // PPU ticks every dot. CPU timing uses a post-instruction wait counter:
   // each instruction consumes N CPU cycles (= N*3 PPU dots). After executing
@@ -78,8 +86,10 @@ void sb_nes_frame(sb_nes_t *nes) {
 
   for (int scanline = 0; scanline < SB_PPU_NTSC_SCANLINES; scanline++) {
     int dots = SB_PPU_DOTS_PER_SCANLINE;
-    if (scanline == SB_PPU_NTSC_SCANLINES - 1 && nes->ppu.odd_frame &&
-        (nes->ppu.ppumask & (SB_PPUMASK_SHOW_BG | SB_PPUMASK_SHOW_SPR)))
+    if (
+      scanline == SB_PPU_NTSC_SCANLINES - 1 && nes->ppu.odd_frame &&
+      (nes->ppu.ppumask & (SB_PPUMASK_SHOW_BG | SB_PPUMASK_SHOW_SPR))
+    )
       dots = SB_PPU_DOTS_PER_SCANLINE - 1;
 
     for (int dot = 0; dot < dots; dot++) {
@@ -134,7 +144,7 @@ static uint8_t reverse_bits(uint8_t b) {
   return b;
 }
 
-void sb_nes_set_buttons(sb_nes_t *nes, uint8_t mask) {
+void sb_nes_set_buttons(sb_nes_t* nes, uint8_t mask) {
   nes->controller_mask = mask;
   // Convert from frontend bit order to NES protocol order
   // Frontend: A=bit7,R=bit0  →  NES: A=bit0,R=bit7

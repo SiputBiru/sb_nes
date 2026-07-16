@@ -41,46 +41,36 @@ typedef struct {
 
 // opcode
 typedef struct {
-  const char *mnemonic;
+  const char* mnemonic;
   uint8_t bytes;
   uint8_t cycles;
   bool page_penalty;
-  sb_6502_result_t (*addr_mode)(sb_6502_t *, sb_bus_t *);
-  void (*func)(sb_6502_t *, sb_bus_t *, uint8_t);
+  sb_6502_result_t (*addr_mode)(sb_6502_t*, sb_bus_t*);
+  void (*func)(sb_6502_t*, sb_bus_t*, uint8_t);
 } sb_6502_opcode_t;
 
-typedef void (*sb_6502_op_fn)(sb_6502_t *cpu, sb_bus_t *bus, uint8_t value);
+typedef void (*sb_6502_op_fn)(sb_6502_t* cpu, sb_bus_t* bus, uint8_t value);
 
-sb_6502_result_t addr_immediate(sb_6502_t *cpu,
-                                sb_bus_t *bus); // Implicit (no addr fetch)
-sb_6502_result_t addr_zero_page(sb_6502_t *cpu,
-                                sb_bus_t *bus); // Single byte addr
-sb_6502_result_t addr_zero_page_x(sb_6502_t *cpu,
-                                  sb_bus_t *bus); // (zp + X) & 0xFF
-sb_6502_result_t addr_zero_page_y(sb_6502_t *cpu, sb_bus_t *bus);
-sb_6502_result_t addr_absolute(sb_6502_t *cpu, sb_bus_t *bus); // Two byte addr
-sb_6502_result_t addr_absolute_x(sb_6502_t *cpu,
-                                 sb_bus_t *bus); // (abs + X), check page
-sb_6502_result_t addr_absolute_y(sb_6502_t *cpu,
-                                 sb_bus_t *bus); // (abs + Y), check page
-sb_6502_result_t addr_indirect(sb_6502_t *cpu,
-                               sb_bus_t *bus); // JMP only (([addr]))
-sb_6502_result_t addr_indexed_indirect(sb_6502_t *cpu,
-                                       sb_bus_t *bus); // ((zp + X))
-sb_6502_result_t addr_indirect_indexed(sb_6502_t *cpu,
-                                       sb_bus_t *bus); // ((zp)) + Y, check page
+sb_6502_result_t addr_immediate(sb_6502_t* cpu, sb_bus_t* bus);   // Implicit (no addr fetch)
+sb_6502_result_t addr_zero_page(sb_6502_t* cpu, sb_bus_t* bus);   // Single byte addr
+sb_6502_result_t addr_zero_page_x(sb_6502_t* cpu, sb_bus_t* bus); // (zp + X) & 0xFF
+sb_6502_result_t addr_zero_page_y(sb_6502_t* cpu, sb_bus_t* bus);
+sb_6502_result_t addr_absolute(sb_6502_t* cpu, sb_bus_t* bus);         // Two byte addr
+sb_6502_result_t addr_absolute_x(sb_6502_t* cpu, sb_bus_t* bus);       // (abs + X), check page
+sb_6502_result_t addr_absolute_y(sb_6502_t* cpu, sb_bus_t* bus);       // (abs + Y), check page
+sb_6502_result_t addr_indirect(sb_6502_t* cpu, sb_bus_t* bus);         // JMP only (([addr]))
+sb_6502_result_t addr_indexed_indirect(sb_6502_t* cpu, sb_bus_t* bus); // ((zp + X))
+sb_6502_result_t addr_indirect_indexed(sb_6502_t* cpu, sb_bus_t* bus); // ((zp)) + Y, check page
 sb_6502_result_t
-addr_relative(sb_6502_t *cpu,
-              sb_bus_t *bus); // branch instruction (bEQ, BNE, etc.)
-sb_6502_result_t addr_implied(sb_6502_t *cpu, sb_bus_t *bus); // CLC, INX, TAX
+addr_relative(sb_6502_t* cpu, sb_bus_t* bus);                 // branch instruction (bEQ, BNE, etc.)
+sb_6502_result_t addr_implied(sb_6502_t* cpu, sb_bus_t* bus); // CLC, INX, TAX
 
-sb_6502_result_t addr_accumulator(sb_6502_t *cpu,
-                                  sb_bus_t *bus); // ASL A, ROL A, etc.
+sb_6502_result_t addr_accumulator(sb_6502_t* cpu, sb_bus_t* bus); // ASL A, ROL A, etc.
 
 void sb_6502_init_opcodes(void);
-void sb_6502_step(sb_6502_t *cpu, sb_bus_t *bus);
-void sb_6502_reset(sb_6502_t *cpu, sb_bus_t *bus);
-void sb_6502_nmi(sb_6502_t *cpu, sb_bus_t *bus);
-void sb_6502_irq(sb_6502_t *cpu, sb_bus_t *bus);
+void sb_6502_step(sb_6502_t* cpu, sb_bus_t* bus);
+void sb_6502_reset(sb_6502_t* cpu, sb_bus_t* bus);
+void sb_6502_nmi(sb_6502_t* cpu, sb_bus_t* bus);
+void sb_6502_irq(sb_6502_t* cpu, sb_bus_t* bus);
 
 #endif

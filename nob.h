@@ -197,10 +197,10 @@
 #if defined(__GNUC__) || defined(__clang__)
 //   https://gcc.gnu.org/onlinedocs/gcc-4.7.2/gcc/Function-Attributes.html
 #ifdef __MINGW_PRINTF_FORMAT
-#define NOB_PRINTF_FORMAT(STRING_INDEX, FIRST_TO_CHECK)                                            \
+#define NOB_PRINTF_FORMAT(STRING_INDEX, FIRST_TO_CHECK) \
   __attribute__((format(__MINGW_PRINTF_FORMAT, STRING_INDEX, FIRST_TO_CHECK)))
 #else
-#define NOB_PRINTF_FORMAT(STRING_INDEX, FIRST_TO_CHECK)                                            \
+#define NOB_PRINTF_FORMAT(STRING_INDEX, FIRST_TO_CHECK) \
   __attribute__((format(printf, STRING_INDEX, FIRST_TO_CHECK)))
 #endif // __MINGW_PRINTF_FORMAT
 #else
@@ -209,19 +209,19 @@
 #endif
 
 #define NOB_UNUSED(value) (void)(value)
-#define NOB_TODO(message)                                                                          \
-  do {                                                                                             \
-    fprintf(stderr, "%s:%d: TODO: %s\n", __FILE__, __LINE__, message);                             \
-    abort();                                                                                       \
+#define NOB_TODO(message) \
+  do { \
+    fprintf(stderr, "%s:%d: TODO: %s\n", __FILE__, __LINE__, message); \
+    abort(); \
   } while (0)
-#define NOB_UNREACHABLE(message)                                                                   \
-  do {                                                                                             \
-    fprintf(stderr, "%s:%d: UNREACHABLE: %s\n", __FILE__, __LINE__, message);                      \
-    abort();                                                                                       \
+#define NOB_UNREACHABLE(message) \
+  do { \
+    fprintf(stderr, "%s:%d: UNREACHABLE: %s\n", __FILE__, __LINE__, message); \
+    abort(); \
   } while (0)
 
 #define NOB_ARRAY_LEN(array) (sizeof(array) / sizeof(array[0]))
-#define NOB_ARRAY_GET(array, index)                                                                \
+#define NOB_ARRAY_GET(array, index) \
   (NOB_ASSERT((size_t)index < NOB_ARRAY_LEN(array)), array[(size_t)index])
 
 typedef enum {
@@ -325,7 +325,7 @@ typedef struct {
 
 NOBDEF bool nob_walk_dir_opt(const char* root, Nob_Walk_Func func, Nob_Walk_Dir_Opt);
 
-#define nob_walk_dir(root, func, ...)                                                              \
+#define nob_walk_dir(root, func, ...) \
   nob_walk_dir_opt((root), (func), NOB_CLIT(Nob_Walk_Dir_Opt){ __VA_ARGS__ })
 
 typedef struct {
@@ -357,10 +357,10 @@ NOBDEF bool nob_dir_entry_open(const char* dir_path, Nob_Dir_Entry* dir);
 NOBDEF bool nob_dir_entry_next(Nob_Dir_Entry* dir);
 NOBDEF void nob_dir_entry_close(Nob_Dir_Entry dir);
 
-#define nob_return_defer(value)                                                                    \
-  do {                                                                                             \
-    result = (value);                                                                              \
-    goto defer;                                                                                    \
+#define nob_return_defer(value) \
+  do { \
+    result = (value); \
+    goto defer; \
   } while (0)
 
 // Initial capacity of a dynamic array
@@ -374,52 +374,52 @@ NOBDEF void nob_dir_entry_close(Nob_Dir_Entry dir);
 #define NOB_DECLTYPE_CAST(T)
 #endif // __cplusplus
 
-#define nob_da_reserve(da, expected_capacity)                                                      \
-  do {                                                                                             \
-    if ((expected_capacity) > (da)->capacity) {                                                    \
-      if ((da)->capacity == 0) {                                                                   \
-        (da)->capacity = NOB_DA_INIT_CAP;                                                          \
-      }                                                                                            \
-      while ((expected_capacity) > (da)->capacity) {                                               \
-        (da)->capacity *= 2;                                                                       \
-      }                                                                                            \
-      (da)->items = NOB_DECLTYPE_CAST((da)->items)                                                 \
-        NOB_REALLOC((da)->items, (da)->capacity * sizeof(*(da)->items));                           \
-      NOB_ASSERT((da)->items != NULL && "Buy more RAM lol");                                       \
-    }                                                                                              \
+#define nob_da_reserve(da, expected_capacity) \
+  do { \
+    if ((expected_capacity) > (da)->capacity) { \
+      if ((da)->capacity == 0) { \
+        (da)->capacity = NOB_DA_INIT_CAP; \
+      } \
+      while ((expected_capacity) > (da)->capacity) { \
+        (da)->capacity *= 2; \
+      } \
+      (da)->items = NOB_DECLTYPE_CAST((da)->items) \
+        NOB_REALLOC((da)->items, (da)->capacity * sizeof(*(da)->items)); \
+      NOB_ASSERT((da)->items != NULL && "Buy more RAM lol"); \
+    } \
   } while (0)
 
 // Append an item to a dynamic array
-#define nob_da_append(da, item)                                                                    \
-  do {                                                                                             \
-    nob_da_reserve((da), (da)->count + 1);                                                         \
-    (da)->items[(da)->count++] = (item);                                                           \
+#define nob_da_append(da, item) \
+  do { \
+    nob_da_reserve((da), (da)->count + 1); \
+    (da)->items[(da)->count++] = (item); \
   } while (0)
 
 #define nob_da_free(da) NOB_FREE((da).items)
 
 // Append several items to a dynamic array
-#define nob_da_append_many(da, new_items, new_items_count)                                         \
-  do {                                                                                             \
-    nob_da_reserve((da), (da)->count + (new_items_count));                                         \
-    memcpy((da)->items + (da)->count, (new_items), (new_items_count) * sizeof(*(da)->items));      \
-    (da)->count += (new_items_count);                                                              \
+#define nob_da_append_many(da, new_items, new_items_count) \
+  do { \
+    nob_da_reserve((da), (da)->count + (new_items_count)); \
+    memcpy((da)->items + (da)->count, (new_items), (new_items_count) * sizeof(*(da)->items)); \
+    (da)->count += (new_items_count); \
   } while (0)
 
-#define nob_da_resize(da, new_size)                                                                \
-  do {                                                                                             \
-    nob_da_reserve((da), new_size);                                                                \
-    (da)->count = (new_size);                                                                      \
+#define nob_da_resize(da, new_size) \
+  do { \
+    nob_da_reserve((da), new_size); \
+    (da)->count = (new_size); \
   } while (0)
 
 #define nob_da_pop(da) (da)->items[(NOB_ASSERT((da)->count > 0), --(da)->count)]
 #define nob_da_first(da) (da)->items[(NOB_ASSERT((da)->count > 0), 0)]
 #define nob_da_last(da) (da)->items[(NOB_ASSERT((da)->count > 0), (da)->count - 1)]
-#define nob_da_remove_unordered(da, i)                                                             \
-  do {                                                                                             \
-    size_t j = (i);                                                                                \
-    NOB_ASSERT(j < (da)->count);                                                                   \
-    (da)->items[j] = (da)->items[--(da)->count];                                                   \
+#define nob_da_remove_unordered(da, i) \
+  do { \
+    size_t j = (i); \
+    NOB_ASSERT(j < (da)->count); \
+    (da)->items[j] = (da)->items[--(da)->count]; \
   } while (0)
 
 // Foreach over Dynamic Arrays. Example:
@@ -443,12 +443,12 @@ NOBDEF void nob_dir_entry_close(Nob_Dir_Entry dir);
 //     nob_log(INFO, "%zu: %d", index, *x);
 // }
 // ```
-#define nob_da_foreach(Type, it, da)                                                               \
+#define nob_da_foreach(Type, it, da) \
   for (Type* it = (da)->items; it < (da)->items + (da)->count; ++it)
 
 // The Fixed Array append. `items` fields must be a fixed size array. Its size determines the
 // capacity.
-#define nob_fa_append(fa, item)                                                                    \
+#define nob_fa_append(fa, item) \
   (NOB_ASSERT((fa)->count < NOB_ARRAY_LEN((fa)->items)), (fa)->items[(fa)->count++] = (item))
 
 typedef struct {
@@ -457,11 +457,11 @@ typedef struct {
   size_t capacity;
 } Nob_String_Builder;
 
-#define nob_swap(T, a, b)                                                                          \
-  do {                                                                                             \
-    T t = a;                                                                                       \
-    a = b;                                                                                         \
-    b = t;                                                                                         \
+#define nob_swap(T, a, b) \
+  do { \
+    T t = a; \
+    a = b; \
+    b = t; \
   } while (0)
 
 NOBDEF bool nob_read_entire_file(const char* path, Nob_String_Builder* sb);
@@ -485,11 +485,11 @@ NOBDEF void nob_sb_pad_align(Nob_String_Builder* sb, size_t size);
 #define nob_sb_append_sv(sb, sv) nob_sb_append_buf((sb), (sv).data, (sv).count)
 
 // Append a NULL-terminated string to a string builder
-#define nob_sb_append_cstr(sb, cstr)                                                               \
-  do {                                                                                             \
-    const char* s = (cstr);                                                                        \
-    size_t n = strlen(s);                                                                          \
-    nob_da_append_many(sb, s, n);                                                                  \
+#define nob_sb_append_cstr(sb, cstr) \
+  do { \
+    const char* s = (cstr); \
+    size_t n = strlen(s); \
+    nob_da_append_many(sb, s, n); \
   } while (0)
 
 // Append a single NULL character at the end of a string builder. So then you can
@@ -622,7 +622,7 @@ typedef struct {
 typedef struct {
   const char* stdin_path;
 } Nob_Chain_Begin_Opt;
-#define nob_chain_begin(chain, ...)                                                                \
+#define nob_chain_begin(chain, ...) \
   nob_chain_begin_opt((chain), NOB_CLIT(Nob_Chain_Begin_Opt){ __VA_ARGS__ })
 NOBDEF bool nob_chain_begin_opt(Nob_Chain* chain, Nob_Chain_Begin_Opt opt);
 
@@ -630,7 +630,7 @@ typedef struct {
   bool err2out;
   bool dont_reset;
 } Nob_Chain_Cmd_Opt;
-#define nob_chain_cmd(chain, cmd, ...)                                                             \
+#define nob_chain_cmd(chain, cmd, ...) \
   nob_chain_cmd_opt((chain), (cmd), NOB_CLIT(Nob_Chain_Cmd_Opt){ __VA_ARGS__ })
 NOBDEF bool nob_chain_cmd_opt(Nob_Chain* chain, Nob_Cmd* cmd, Nob_Chain_Cmd_Opt opt);
 
@@ -640,7 +640,7 @@ typedef struct {
   const char* stdout_path;
   const char* stderr_path;
 } Nob_Chain_End_Opt;
-#define nob_chain_end(chain, ...)                                                                  \
+#define nob_chain_end(chain, ...) \
   nob_chain_end_opt((chain), NOB_CLIT(Nob_Chain_End_Opt){ __VA_ARGS__ })
 NOBDEF bool nob_chain_end_opt(Nob_Chain* chain, Nob_Chain_End_Opt opt);
 
@@ -700,25 +700,25 @@ NOBDEF void nob_cmd_render(Nob_Cmd cmd, Nob_String_Builder* render);
 
 NOBDEF void nob__cmd_append(Nob_Cmd* cmd, size_t n, const char** args);
 #if defined(__cplusplus)
-template <typename... Args>
-static inline void nob__cpp_cmd_append_wrapper(Nob_Cmd* cmd, Args... strs) {
+template<typename... Args> static inline void
+nob__cpp_cmd_append_wrapper(Nob_Cmd* cmd, Args... strs) {
   const char* args[] = { strs... };
   nob__cmd_append(cmd, sizeof(args) / sizeof(args[0]), args);
 }
 #define nob_cmd_append(cmd, ...) nob__cpp_cmd_append_wrapper(cmd, __VA_ARGS__)
 #else
-#define nob_cmd_append(cmd, ...)                                                                   \
-  nob__cmd_append(                                                                                 \
-    cmd,                                                                                           \
-    sizeof((const char*[]){ __VA_ARGS__ }) / sizeof(const char*),                                  \
-    (const char*[]){ __VA_ARGS__ }                                                                 \
+#define nob_cmd_append(cmd, ...) \
+  nob__cmd_append( \
+    cmd, \
+    sizeof((const char*[]){ __VA_ARGS__ }) / sizeof(const char*), \
+    (const char*[]){ __VA_ARGS__ } \
   )
 #endif // __cplusplus
 
 // TODO: nob_cmd_extend() evaluates other_cmd twice
 // It can be fixed by turning nob_cmd_extend() call into a statement.
 // But that may break backward compatibility of the API.
-#define nob_cmd_extend(cmd, other_cmd)                                                             \
+#define nob_cmd_extend(cmd, other_cmd) \
   nob_da_append_many(cmd, (other_cmd)->items, (other_cmd)->count)
 
 // Free all the memory allocated by command arguments
@@ -866,11 +866,11 @@ NOBDEF char* nob_temp_running_executable_path(void);
 
 #ifndef nob_cc_output
 #if defined(_MSC_VER) && !defined(__clang__)
-#define nob_cc_output(cmd, output_path)                                                            \
-  nob_cmd_append(                                                                                  \
-    cmd,                                                                                           \
-    nob_temp_sprintf("/Fe:%s", (output_path)),                                                     \
-    nob_temp_sprintf("/Fo:%s", (output_path))                                                      \
+#define nob_cc_output(cmd, output_path) \
+  nob_cmd_append( \
+    cmd, \
+    nob_temp_sprintf("/Fe:%s", (output_path)), \
+    nob_temp_sprintf("/Fo:%s", (output_path)) \
   )
 #else
 #define nob_cc_output(cmd, output_path) nob_cmd_append(cmd, "-o", (output_path))
@@ -891,29 +891,29 @@ NOBDEF char* nob_temp_running_executable_path(void);
 #if defined(_WIN32)
 #if defined(__clang__)
 #if defined(__cplusplus)
-#define NOB_REBUILD_URSELF(binary_path, source_path)                                               \
+#define NOB_REBUILD_URSELF(binary_path, source_path) \
   "clang", "-x", "c++", "-o", binary_path, source_path
 #else
-#define NOB_REBUILD_URSELF(binary_path, source_path)                                               \
+#define NOB_REBUILD_URSELF(binary_path, source_path) \
   "clang", "-x", "c", "-o", binary_path, source_path
 #endif
 #elif defined(__GNUC__)
 #if defined(__cplusplus)
-#define NOB_REBUILD_URSELF(binary_path, source_path)                                               \
+#define NOB_REBUILD_URSELF(binary_path, source_path) \
   "gcc", "-x", "c++", "-o", binary_path, source_path
 #else
-#define NOB_REBUILD_URSELF(binary_path, source_path)                                               \
+#define NOB_REBUILD_URSELF(binary_path, source_path) \
   "gcc", "-x", "c", "-o", binary_path, source_path
 #endif
 #elif defined(_MSC_VER)
-#define NOB_REBUILD_URSELF(binary_path, source_path)                                               \
+#define NOB_REBUILD_URSELF(binary_path, source_path) \
   "cl.exe", nob_temp_sprintf("/Fe:%s", (binary_path)), source_path
 #elif defined(__TINYC__)
 #define NOB_REBUILD_URSELF(binary_path, source_path) "tcc", "-o", binary_path, source_path
 #endif
 #else
 #if defined(__cplusplus)
-#define NOB_REBUILD_URSELF(binary_path, source_path)                                               \
+#define NOB_REBUILD_URSELF(binary_path, source_path) \
   "cc", "-x", "c++", "-o", binary_path, source_path
 #else
 #define NOB_REBUILD_URSELF(binary_path, source_path) "cc", "-x", "c", "-o", binary_path, source_path
@@ -961,7 +961,7 @@ NOBDEF void nob__go_rebuild_urself(int argc, char** argv, const char* source_pat
 //     // ...
 //     return 0;
 // }
-#define NOB_GO_REBUILD_URSELF_PLUS(argc, argv, ...)                                                \
+#define NOB_GO_REBUILD_URSELF_PLUS(argc, argv, ...) \
   nob__go_rebuild_urself(argc, argv, __FILE__, __VA_ARGS__, NULL);
 
 typedef struct {

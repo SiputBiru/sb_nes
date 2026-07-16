@@ -103,31 +103,31 @@ typedef struct sb_ppu_t {
   uint8_t dma_offset;
   bool dma_dummy;
 
-  struct sb_cartridge_t *cartridge;
+  struct sb_cartridge_t* cartridge;
 } sb_ppu_t;
 
 // Core API
-void sb_ppu_init(sb_ppu_t *ppu, sb_cartridge_t *cart);
+void sb_ppu_init(sb_ppu_t* ppu, sb_cartridge_t* cart);
 
 // Register access (called by bus)
-uint8_t sb_ppu_read(sb_ppu_t *ppu, uint16_t addr);
-void sb_ppu_write(sb_ppu_t *ppu, uint16_t addr, uint8_t val);
+uint8_t sb_ppu_read(sb_ppu_t* ppu, uint16_t addr);
+void sb_ppu_write(sb_ppu_t* ppu, uint16_t addr, uint8_t val);
 
 // Tick the PPU by one dot.
-void sb_ppu_tick(sb_ppu_t *ppu);
+void sb_ppu_tick(sb_ppu_t* ppu);
 
 // OAM DMA (triggered by CPU write to $4014)
-void sb_ppu_oam_dma_start(sb_ppu_t *ppu, uint8_t page);
+void sb_ppu_oam_dma_start(sb_ppu_t* ppu, uint8_t page);
 
 // Get the framebuffer (palette indices)
-uint8_t *sb_ppu_get_framebuffer(sb_ppu_t *ppu);
+uint8_t* sb_ppu_get_framebuffer(sb_ppu_t* ppu);
 
 // Render one pixel of background and sprites
-void sb_ppu_render_pixel(sb_ppu_t *ppu);
+void sb_ppu_render_pixel(sb_ppu_t* ppu);
 
 // VRAM access (internal helpers, exposed for testing)
-uint8_t sb_ppu_vram_read(sb_ppu_t *ppu, uint16_t addr);
-void sb_ppu_vram_write(sb_ppu_t *ppu, uint16_t addr, uint8_t val);
+uint8_t sb_ppu_vram_read(sb_ppu_t* ppu, uint16_t addr);
+void sb_ppu_vram_write(sb_ppu_t* ppu, uint16_t addr, uint8_t val);
 
 // Apply NES palette mirroring: $3F10/$3F14/$3F18/$3F1C map to
 // $3F00/$3F04/$3F08/$3F0C. Input is a 5-bit palette index (0-31).

@@ -4,8 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-sb_cartridge_result_t sb_cartridge_load(sb_cartridge_t *cart,
-                                        const uint8_t *data, size_t size) {
+sb_cartridge_result_t sb_cartridge_load(sb_cartridge_t* cart, const uint8_t* data, size_t size) {
   if (size < 16)
     return SB_CARTRIDGE_ERR_BAD_MAGIC;
 
@@ -35,8 +34,7 @@ sb_cartridge_result_t sb_cartridge_load(sb_cartridge_t *cart,
   if (flags_byte1 & 0x08) {
     cart->mapper.mirroring = SB_MIRROR_FOUR_SCREEN;
   } else {
-    cart->mapper.mirroring =
-        (flags_byte1 & 0x01) ? SB_MIRROR_VERTICAL : SB_MIRROR_HORIZONTAL;
+    cart->mapper.mirroring = (flags_byte1 & 0x01) ? SB_MIRROR_VERTICAL : SB_MIRROR_HORIZONTAL;
   }
   cart->battery_backed = (flags_byte1 & 0x02) != 0;
 
@@ -46,8 +44,7 @@ sb_cartridge_result_t sb_cartridge_load(sb_cartridge_t *cart,
     offset += 512;
 
   // PRG-RAM size
-  cart->prg_ram_size =
-      (prg_ram_units == 0) ? 8192 : (size_t)prg_ram_units * 8192;
+  cart->prg_ram_size = (prg_ram_units == 0) ? 8192 : (size_t)prg_ram_units * 8192;
   if (cart->prg_ram_size > SB_PRG_RAM_MAX)
     cart->prg_ram_size = SB_PRG_RAM_MAX;
 
@@ -110,9 +107,8 @@ sb_cartridge_result_t sb_cartridge_load(sb_cartridge_t *cart,
   return SB_CARTRIDGE_OK;
 }
 
-sb_cartridge_result_t sb_cartridge_load_from_file(sb_cartridge_t *cart,
-                                                  const char *path) {
-  FILE *fp = fopen(path, "rb");
+sb_cartridge_result_t sb_cartridge_load_from_file(sb_cartridge_t* cart, const char* path) {
+  FILE* fp = fopen(path, "rb");
   if (!fp)
     return SB_CARTRIDGE_ERR_BAD_FILE;
 
@@ -127,7 +123,7 @@ sb_cartridge_result_t sb_cartridge_load_from_file(sb_cartridge_t *cart,
   }
 
   // Read entire file into temp buffer
-  uint8_t *buf = malloc((size_t)fsize);
+  uint8_t* buf = malloc((size_t)fsize);
   if (!buf) {
     fclose(fp);
     return SB_CARTRIDGE_ERR_BAD_FILE;

@@ -6,27 +6,26 @@
 static int total = 0;
 static int passed = 0;
 
-#define TEST(name, cond)                                                       \
-  do {                                                                         \
-    total++;                                                                   \
-    if (!(cond)) {                                                             \
-      printf("FAIL: %s\n", name);                                              \
-    } else {                                                                   \
-      passed++;                                                                \
-      printf("PASS: %s\n", name);                                              \
-    }                                                                          \
+#define TEST(name, cond) \
+  do { \
+    total++; \
+    if (!(cond)) { \
+      printf("FAIL: %s\n", name); \
+    } else { \
+      passed++; \
+      printf("PASS: %s\n", name); \
+    } \
   } while (0)
 
 // Helper: build an iNES header + body
 // Returns a heap-allocated buffer with header + PRG + CHR.
 // Caller must free().
-static uint8_t *build_rom(uint8_t prg_units, uint8_t chr_units, uint8_t flags1,
-                          uint8_t flags2) {
+static uint8_t* build_rom(uint8_t prg_units, uint8_t chr_units, uint8_t flags1, uint8_t flags2) {
   size_t prg_bytes = (size_t)prg_units * 16384;
   size_t chr_bytes = (size_t)chr_units * 8192;
   size_t total_size = 16 + prg_bytes + chr_bytes;
 
-  uint8_t *rom = (uint8_t *)malloc(total_size);
+  uint8_t* rom = (uint8_t*)malloc(total_size);
   if (!rom)
     return NULL;
   memset(rom, 0, total_size);
@@ -54,7 +53,7 @@ static uint8_t *build_rom(uint8_t prg_units, uint8_t chr_units, uint8_t flags1,
 // Header parsing tests
 
 static void test_valid_nrom_16kb(void) {
-  uint8_t *rom = build_rom(1, 0, 0x00, 0x00);
+  uint8_t* rom = build_rom(1, 0, 0x00, 0x00);
   sb_cartridge_t cart;
   sb_cartridge_result_t r = sb_cartridge_load(&cart, rom, 16 + 16384);
   free(rom);
@@ -69,7 +68,7 @@ static void test_valid_nrom_16kb(void) {
 }
 
 static void test_valid_nrom_32kb(void) {
-  uint8_t *rom = build_rom(2, 1, 0x01, 0x00);
+  uint8_t* rom = build_rom(2, 1, 0x01, 0x00);
   sb_cartridge_t cart;
   sb_cartridge_result_t r = sb_cartridge_load(&cart, rom, 16 + 32768 + 8192);
   free(rom);
@@ -83,23 +82,22 @@ static void test_valid_nrom_32kb(void) {
 }
 
 static void test_bad_magic(void) {
-  uint8_t rom[16] = {0}; // no "NES\x1A"
+  uint8_t rom[16] = { 0 }; // no "NES\x1A"
   sb_cartridge_t cart;
   sb_cartridge_result_t r = sb_cartridge_load(&cart, rom, sizeof(rom));
   TEST("Bad magic returns ERR_BAD_MAGIC", r == SB_CARTRIDGE_ERR_BAD_MAGIC);
 }
 
 static void test_unsupported_mapper(void) {
-  uint8_t *rom = build_rom(1, 0, 0x10, 0x00); // mapper low nybble = 1 (MMC1)
+  uint8_t* rom = build_rom(1, 0, 0x10, 0x00); // mapper low nybble = 1 (MMC1)
   sb_cartridge_t cart;
   sb_cartridge_result_t r = sb_cartridge_load(&cart, rom, 16 + 16384);
   free(rom);
-  TEST("MMC1 (mapper 1) returns ERR_UNSUPPORTED_MAPPER",
-       r == SB_CARTRIDGE_ERR_UNSUPPORTED_MAPPER);
+  TEST("MMC1 (mapper 1) returns ERR_UNSUPPORTED_MAPPER", r == SB_CARTRIDGE_ERR_UNSUPPORTED_MAPPER);
 }
 
 static void test_nes2_rejected(void) {
-  uint8_t *rom = build_rom(1, 0, 0x00, 0x08); // NES 2.0 marker
+  uint8_t* rom = build_rom(1, 0, 0x00, 0x08); // NES 2.0 marker
   sb_cartridge_t cart;
   sb_cartridge_result_t r = sb_cartridge_load(&cart, rom, 16 + 16384);
   free(rom);
@@ -109,7 +107,7 @@ static void test_nes2_rejected(void) {
 // ROM read tests
 
 static void test_nrom_read(void) {
-  uint8_t *rom = build_rom(1, 0, 0x00, 0x00);
+  uint8_t* rom = build_rom(1, 0, 0x00, 0x00);
   sb_cartridge_t cart;
   sb_cartridge_load(&cart, rom, 16 + 16384);
   free(rom);
@@ -125,7 +123,7 @@ static void test_nrom_read(void) {
 }
 
 static void test_nrom_read_32kb(void) {
-  uint8_t *rom = build_rom(2, 0, 0x00, 0x00);
+  uint8_t* rom = build_rom(2, 0, 0x00, 0x00);
   sb_cartridge_t cart;
   sb_cartridge_load(&cart, rom, 16 + 32768);
   free(rom);
@@ -134,14 +132,13 @@ static void test_nrom_read_32kb(void) {
   TEST("32KB: Read $8000 = byte 0", v == 0x00);
 
   v = cart.mapper.read(&cart.mapper, 0xC000);
-  TEST("32KB: Read $C000 = byte 16384 (second bank)",
-       v == (uint8_t)(16384 & 0xFF));
+  TEST("32KB: Read $C000 = byte 16384 (second bank)", v == (uint8_t)(16384 & 0xFF));
 }
 
 // SRAM test
 
 static void test_sram(void) {
-  uint8_t *rom = build_rom(1, 0, 0x00, 0x00);
+  uint8_t* rom = build_rom(1, 0, 0x00, 0x00);
   sb_cartridge_t cart;
   sb_cartridge_load(&cart, rom, 16 + 16384);
   free(rom);
@@ -162,7 +159,7 @@ static void test_sram(void) {
 // CHR tests
 
 static void test_chr_read(void) {
-  uint8_t *rom = build_rom(1, 1, 0x00, 0x00); // 8KB CHR-ROM
+  uint8_t* rom = build_rom(1, 1, 0x00, 0x00); // 8KB CHR-ROM
   sb_cartridge_t cart;
   sb_cartridge_load(&cart, rom, 16 + 16384 + 8192);
   free(rom);
@@ -176,7 +173,7 @@ static void test_chr_read(void) {
 }
 
 static void test_chr_ram(void) {
-  uint8_t *rom = build_rom(1, 0, 0x00, 0x00); // no CHR-ROM -> CHR-RAM
+  uint8_t* rom = build_rom(1, 0, 0x00, 0x00); // no CHR-ROM -> CHR-RAM
   sb_cartridge_t cart;
   sb_cartridge_load(&cart, rom, 16 + 16384);
   free(rom);
@@ -205,11 +202,10 @@ static void test_no_prg(void) {
 }
 
 static void test_small_file(void) {
-  uint8_t buf[4] = {0};
+  uint8_t buf[4] = { 0 };
   sb_cartridge_t cart;
   sb_cartridge_result_t r = sb_cartridge_load(&cart, buf, 4);
-  TEST("File < 16 bytes returns ERR_BAD_MAGIC",
-       r == SB_CARTRIDGE_ERR_BAD_MAGIC);
+  TEST("File < 16 bytes returns ERR_BAD_MAGIC", r == SB_CARTRIDGE_ERR_BAD_MAGIC);
 }
 
 int main(void) {

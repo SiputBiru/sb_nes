@@ -2,7 +2,7 @@
 #include "../sb_cartridge/sb_cartridge.h"
 #include "../sb_ppu/sb_ppu.h"
 
-uint8_t sb_bus_read(sb_bus_t *bus, uint16_t addr) {
+uint8_t sb_bus_read(sb_bus_t* bus, uint16_t addr) {
   // split into 8KB regions
   switch (addr >> 13) {
   case 0: // $0000-$1FFF: WRAM (2KB, mirrored every 2KB)
@@ -37,8 +37,7 @@ uint8_t sb_bus_read(sb_bus_t *bus, uint16_t addr) {
     } else {
       if (bus->cartridge)
         // bus->last_read = sb_cartridge_read(bus->cartridge, addr);
-        bus->last_read =
-            bus->cartridge->mapper.read(&bus->cartridge->mapper, addr);
+        bus->last_read = bus->cartridge->mapper.read(&bus->cartridge->mapper, addr);
       else
         bus->last_read = 0;
     }
@@ -47,8 +46,7 @@ uint8_t sb_bus_read(sb_bus_t *bus, uint16_t addr) {
   case 3: // $6000-$7FFF: Cartridge (SRAM)
     if (bus->cartridge)
       // bus->last_read = sb_cartridge_read(bus->cartridge, addr);
-      bus->last_read =
-          bus->cartridge->mapper.read(&bus->cartridge->mapper, addr);
+      bus->last_read = bus->cartridge->mapper.read(&bus->cartridge->mapper, addr);
     else
       bus->last_read = 0;
     break;
@@ -56,8 +54,7 @@ uint8_t sb_bus_read(sb_bus_t *bus, uint16_t addr) {
   default: // $8000-$FFFF: Cartridge (PRG-ROM)
     if (bus->cartridge)
       // bus->last_read = sb_cartridge_read(bus->cartridge, addr);
-      bus->last_read =
-          bus->cartridge->mapper.read(&bus->cartridge->mapper, addr);
+      bus->last_read = bus->cartridge->mapper.read(&bus->cartridge->mapper, addr);
     else
       bus->last_read = 0;
     break;
@@ -66,7 +63,7 @@ uint8_t sb_bus_read(sb_bus_t *bus, uint16_t addr) {
   return bus->last_read;
 }
 
-uint8_t sb_bus_write(sb_bus_t *bus, uint16_t addr, uint8_t val) {
+uint8_t sb_bus_write(sb_bus_t* bus, uint16_t addr, uint8_t val) {
   // split into 8KB regions
   switch (addr >> 13) {
   case 0: // $0000-$1FFF: WRAM

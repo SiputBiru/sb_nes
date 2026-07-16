@@ -40,11 +40,9 @@ typedef struct sb_cartridge_t {
 } sb_cartridge_t;
 
 // Load ROM from a raw byte buffer (for tests / embedded ROMs).
-sb_cartridge_result_t sb_cartridge_load(sb_cartridge_t *cart,
-                                        const uint8_t *data, size_t size);
+sb_cartridge_result_t sb_cartridge_load(sb_cartridge_t* cart, const uint8_t* data, size_t size);
 
 // Load ROM from a file path.
-sb_cartridge_result_t sb_cartridge_load_from_file(sb_cartridge_t *cart,
-                                                  const char *path);
+sb_cartridge_result_t sb_cartridge_load_from_file(sb_cartridge_t* cart, const char* path);
 
 #endif

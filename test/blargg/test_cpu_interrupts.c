@@ -22,35 +22,15 @@ static void run_test(const char* name, const char* path, size_t max_cycles) {
 }
 
 int main(void) {
-  run_test(
-    "CLI Latency",
-    "test/blargg/roms/1-cli_latency.nes",
-    5000000
-  );
+  run_test("CLI Latency", "test/blargg/roms/1-cli_latency.nes", 5000000);
 
-  run_test(
-    "NMI and BRK",
-    "test/blargg/roms/2-nmi_and_brk.nes",
-    5000000
-  );
+  run_test("NMI and BRK", "test/blargg/roms/2-nmi_and_brk.nes", 5000000);
 
-  run_test(
-    "NMI and IRQ",
-    "test/blargg/roms/3-nmi_and_irq.nes",
-    5000000
-  );
+  run_test("NMI and IRQ", "test/blargg/roms/3-nmi_and_irq.nes", 5000000);
 
-  run_test(
-    "IRQ and DMA",
-    "test/blargg/roms/4-irq_and_dma.nes",
-    5000000
-  );
+  run_test("IRQ and DMA", "test/blargg/roms/4-irq_and_dma.nes", 5000000);
 
-  run_test(
-    "Branch Delays IRQ",
-    "test/blargg/roms/5-branch_delays_irq.nes",
-    5000000
-  );
+  run_test("Branch Delays IRQ", "test/blargg/roms/5-branch_delays_irq.nes", 5000000);
 
   printf("\nCPU Interrupts: %d/%d passed\n", passed, total);
   return total - passed;

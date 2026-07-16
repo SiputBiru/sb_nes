@@ -22,11 +22,7 @@ static void run_test(const char* name, const char* path, size_t max_cycles) {
 }
 
 int main(void) {
-  run_test(
-    "CPU Timing Test 6",
-    "test/blargg/roms/cpu_timing_test.nes",
-    5000000
-  );
+  run_test("CPU Timing Test 6", "test/blargg/roms/cpu_timing_test.nes", 5000000);
 
   printf("\nCPU Timing: %d/%d passed\n", passed, total);
   return total - passed;
