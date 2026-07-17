@@ -63,14 +63,10 @@ typedef struct sb_ppu_t {
   // Address / scroll state (v, t, x, w from NESDev)
   uint16_t v;             // current VRAM address (15-bit)
   uint16_t t;             // temporary VRAM address
-  uint8_t x;              // fine X scroll (3-bit)
+  uint8_t x;              // fine X scroll (3-bit) — loaded from latch at dot 257
   uint8_t w;              // write toggle
+  uint8_t fine_x_latch;   // fine X written by $2005, copied to x at dot 257 horizontal reload
   uint8_t fine_x_counter; // fine X running counter during rendering
-
-  // Scroll buffer: defers $2005 writes to the next tile boundary (every 8 pixels)
-  // Prevents mid-tile scroll changes that cause stale tile cache artifacts.
-  bool scroll_pending;
-  uint8_t pending_x;      // fine X buffered for next tile boundary
 
   // Memory
   uint8_t vram[2048];    // 2 KB nametable VRAM
@@ -99,14 +95,13 @@ typedef struct sb_ppu_t {
   bool nmi_previous;
   bool nmi_pending;
 
-  // VBlank read deferral for sync timing
-  bool vblank_clear_pending;
-
   // OAM DMA state
   bool dma_active;
   uint8_t dma_page;
   uint8_t dma_offset;
   bool dma_dummy;
+  bool dma_write;  // false = read cycle, true = write cycle
+  uint8_t dma_value; // byte read during read cycle, written during write cycle
 
   struct sb_cartridge_t* cartridge;
 } sb_ppu_t;

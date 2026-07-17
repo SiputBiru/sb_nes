@@ -48,8 +48,10 @@ int main(void) {
   printf("Running nestest...\n");
 
   for (int i = 0; i < 10000; i++) {
-    // Execute one CPU instruction FIRST
-    sb_6502_step(&cpu, &bus);
+    // Execute one CPU instruction by ticking cycles until the phase/opcode reset
+    do {
+      sb_6502_cycle(&cpu, &bus);
+    } while (cpu.opcode != 0 || cpu.phase != 0);
 
     if (!fgets(expected, sizeof(expected), log)) {
       break;

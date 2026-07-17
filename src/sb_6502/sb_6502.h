@@ -7,6 +7,23 @@
 
 #include "../sb_bus/sb_bus.h"
 
+// Error codes (returned by sb_6502_cycle and cycle handlers)
+#define SB_OK 0          // instruction complete
+#define SB_IN_PROGRESS 1 // more phases remain, call again
+#define SB_ERR_CPU (-1)
+#define SB_ERR_BUS (-2)
+#define SB_ERR_DMA (-3)
+#define SB_ERR_INVAL (-4)
+
+// BKPT: line-numbered error site. In debug builds, captures the
+// failure line. In release, returns a distinguishable negative code
+// so callers can still propagate errors.
+#ifdef NDEBUG
+#define SB_FAIL_LINE(line) ((int)(-(line)))
+#else
+#define SB_FAIL_LINE(line) ((int)(-(line)))
+#endif
+
 // Status register flags (P)
 #define SB_6502_CARRY (1 << 0)
 #define SB_6502_ZERO (1 << 1)
@@ -17,13 +34,19 @@
 #define SB_6502_OVERFLOW (1 << 6)
 #define SB_6502_NEGATIVE (1 << 7)
 
+// Forward declaration of the cycle-handler function type.
+// Each phase of an instruction's execution is one call to a cycle handler.
+// Returns SB_OK when the instruction completes, negative on error.
+struct sb_6502_t;
+typedef int (*sb_6502_cycle_fn)(struct sb_6502_t* cpu, sb_bus_t* bus);
+
 // addressing mode result
 typedef struct {
   uint16_t addr;
   bool page_crossed;
 } sb_6502_result_t;
 
-typedef struct {
+typedef struct sb_6502_t {
 
   uint16_t pc;     // program counter
   uint8_t a, x, y; // accumulator, index registers
@@ -37,6 +60,14 @@ typedef struct {
 
   sb_6502_result_t result;
 
+  // cycle-interleave execution state
+  uint16_t opcode;   // opcode of the currently executing instruction
+                     // (0x100 = NMI, 0x101 = IRQ sentinel)
+  uint8_t phase;     // current micro-operation phase (0, 1, 2, ...)
+  uint16_t addr_abs; // absolute address for read/write
+  int8_t addr_rel;   // relative offset for branches
+  uint8_t fetched;   // value read for ALU operation
+
 } sb_6502_t;
 
 // opcode
@@ -47,6 +78,7 @@ typedef struct {
   bool page_penalty;
   sb_6502_result_t (*addr_mode)(sb_6502_t*, sb_bus_t*);
   void (*func)(sb_6502_t*, sb_bus_t*, uint8_t);
+  sb_6502_cycle_fn cycle;
 } sb_6502_opcode_t;
 
 typedef void (*sb_6502_op_fn)(sb_6502_t* cpu, sb_bus_t* bus, uint8_t value);
@@ -69,6 +101,7 @@ sb_6502_result_t addr_accumulator(sb_6502_t* cpu, sb_bus_t* bus); // ASL A, ROL 
 
 void sb_6502_init_opcodes(void);
 void sb_6502_step(sb_6502_t* cpu, sb_bus_t* bus);
+int sb_6502_cycle(sb_6502_t* cpu, sb_bus_t* bus);
 void sb_6502_reset(sb_6502_t* cpu, sb_bus_t* bus);
 void sb_6502_nmi(sb_6502_t* cpu, sb_bus_t* bus);
 void sb_6502_irq(sb_6502_t* cpu, sb_bus_t* bus);

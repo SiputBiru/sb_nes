@@ -17,9 +17,9 @@ typedef struct {
   // Controller state (still direct read)
   uint8_t controller_mask;
 
-  // CPU cycle timing: PPU dots remaining before next instruction step.
-  // After each instruction, set to (cycles * 3 - 1). Decremented each dot.
-  int32_t cpu_wait;
+  // Cycle-interleave subcycle counter (0,1,2). Every 3 PPU dots = 1 CPU cycle.
+  // Persists across frame boundaries for correct mid-instruction resume.
+  int cpu_subcycle;
 } sb_nes_t;
 
 // Initialize all components, wire pointers, init opcode table
