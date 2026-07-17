@@ -189,13 +189,18 @@ void sb_ppu_write(sb_ppu_t* ppu, uint16_t addr, uint8_t val) {
 
   case 5: // PPUSCROLL (two writes)
     if (ppu->w == 0) {
-      // First write: coarse X scroll + fine X
+      // First write: coarse X scroll + fine X.
+      // Update t immediately but defer application to next tile boundary.
+      // This prevents mid-tile scroll changes that would render stale tile data.
       ppu->t = (ppu->t & 0xFFE0) | (val >> 3);
-      ppu->x = val & 0x07;
-      ppu->fine_x_counter = val & 0x07;
+      ppu->pending_x = val & 0x07;
+      ppu->scroll_pending = true;
+      // Do NOT set x or fine_x_counter here — let the current 8-pixel
+      // tile block finish with the old scroll values.
       ppu->w = 1;
     } else {
-      // Second write: coarse Y scroll + fine Y
+      // Second write: coarse Y scroll + fine Y (not buffered — takes effect
+      // at pre-render dots 280-304 naturally)
       ppu->t = (ppu->t & 0x8C1F) | ((uint16_t)(val & 0x07) << 12) | ((uint16_t)(val & 0xF8) << 2);
       ppu->w = 0;
     }
