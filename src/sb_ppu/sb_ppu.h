@@ -67,6 +67,11 @@ typedef struct sb_ppu_t {
   uint8_t w;              // write toggle
   uint8_t fine_x_counter; // fine X running counter during rendering
 
+  // Scroll buffer: defers $2005 writes to the next tile boundary (every 8 pixels)
+  // Prevents mid-tile scroll changes that cause stale tile cache artifacts.
+  bool scroll_pending;
+  uint8_t pending_x;      // fine X buffered for next tile boundary
+
   // Memory
   uint8_t vram[2048];    // 2 KB nametable VRAM
   uint8_t palette[32];   // Palette RAM ($3F00-$3F1F)
