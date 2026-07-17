@@ -97,16 +97,6 @@ void sb_ppu_render_pixel(sb_ppu_t* ppu) {
   // Fetch background tile data at tile boundaries (every 8 pixels)
   if (bg_enabled || spr_enabled) {
     if (pixel_x == 0 || ppu->fine_x_counter == 0) {
-      // Apply any buffered scroll change at the tile boundary.
-      // This ensures the new scroll takes effect on a clean 8-pixel block
-      // rather than mid-tile, which would render stale tile data.
-      if (ppu->scroll_pending) {
-        ppu->v = (ppu->v & ~0x041F) | (ppu->t & 0x041F);
-        ppu->fine_x_counter = ppu->pending_x;
-        ppu->x = ppu->pending_x;
-        ppu->scroll_pending = false;
-      }
-
       uint16_t nt_addr = 0x2000 | (ppu->v & 0x0FFF);
       ppu->tile_cache.tile_index = sb_ppu_vram_read(ppu, nt_addr);
 

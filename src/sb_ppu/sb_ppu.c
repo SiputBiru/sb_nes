@@ -119,18 +119,7 @@ uint8_t sb_ppu_read(sb_ppu_t* ppu, uint16_t addr) {
   case 2: // PPUSTATUS
   {
     uint8_t val = ppu->ppustatus;
-    // Clear VBlank flag: the first read after VBlank was set returns the
-    // flag, but doesn't clear it yet. The SECOND read after VBlank was
-    // set actually clears it. This matches the real hardware behavior
-    // where two LDA $2002 in rapid succession can both see VBlank set,
-    // which is needed by full_palette.nes's sync loop.
-    if (ppu->vblank_clear_pending) {
-      ppu->ppustatus &= ~SB_PPUSTATUS_VBLANK;
-      ppu->vblank_clear_pending = false;
-    }
-    // If VBlank is set and we read it, mark clear as pending
-    if (val & SB_PPUSTATUS_VBLANK)
-      ppu->vblank_clear_pending = true;
+    ppu->ppustatus &= ~SB_PPUSTATUS_VBLANK;
     ppu->w = 0;
     ppu->nmi_pending = false;
     return val;
@@ -189,18 +178,16 @@ void sb_ppu_write(sb_ppu_t* ppu, uint16_t addr, uint8_t val) {
 
   case 5: // PPUSCROLL (two writes)
     if (ppu->w == 0) {
-      // First write: coarse X scroll + fine X.
-      // Update t immediately but defer application to next tile boundary.
-      // This prevents mid-tile scroll changes that would render stale tile data.
+      // First write: coarse X scroll + fine X latch.
+      // On real NES, fine X is stored in a separate latch and only copied
+      // to the x register at dot 257 (horizontal reload). Setting x directly
+      // here would cause mid-scanline scroll changes, creating a staircase
+      // tearing effect in games like SMB that use sprite 0 hit splits.
       ppu->t = (ppu->t & 0xFFE0) | (val >> 3);
-      ppu->pending_x = val & 0x07;
-      ppu->scroll_pending = true;
-      // Do NOT set x or fine_x_counter here — let the current 8-pixel
-      // tile block finish with the old scroll values.
+      ppu->fine_x_latch = val & 0x07;
       ppu->w = 1;
     } else {
-      // Second write: coarse Y scroll + fine Y (not buffered — takes effect
-      // at pre-render dots 280-304 naturally)
+      // Second write: coarse Y scroll + fine Y
       ppu->t = (ppu->t & 0x8C1F) | ((uint16_t)(val & 0x07) << 12) | ((uint16_t)(val & 0xF8) << 2);
       ppu->w = 0;
     }
@@ -253,7 +240,6 @@ void sb_ppu_tick(sb_ppu_t* ppu) {
   // Sets the VBlank flag in PPUSTATUS and triggers NMI if enabled.
   if (ppu->scanline == SB_PPU_VISIBLE_SCANLINES + 1 && ppu->dot == 1) {
     ppu->ppustatus |= SB_PPUSTATUS_VBLANK;
-    ppu->vblank_clear_pending = false; // Reset for fresh VBlank reads
 
     // Edge-triggered NMI: fires when PPUCTRL NMI enable AND VBlank
     // are both set on the rising edge.
@@ -264,7 +250,6 @@ void sb_ppu_tick(sb_ppu_t* ppu) {
   if (ppu->scanline == SB_PPU_NTSC_SCANLINES - 1 && ppu->dot == 1) {
     ppu->ppustatus &= ~(SB_PPUSTATUS_VBLANK | SB_PPUSTATUS_SPRITE0_HIT | SB_PPUSTATUS_OVERFLOW);
     ppu->nmi_previous = false; // VBlank going low resets edge detection
-    ppu->vblank_clear_pending = false;
   }
 
   // Y increment at dot 256 of visible scanlines
@@ -287,9 +272,12 @@ void sb_ppu_tick(sb_ppu_t* ppu) {
   }
 
   // Horizontal reload at dot 257 from t to v
+  // Also loads fine X from the latch into x and fine_x_counter.
+  // This is when $2005 writes from the previous scanline actually take effect.
   if (rendering && ppu->dot == 257) {
     ppu->v = (ppu->v & ~0x041F) | (ppu->t & 0x041F);
-    ppu->fine_x_counter = ppu->x;
+    ppu->x = ppu->fine_x_latch;
+    ppu->fine_x_counter = ppu->fine_x_latch;
   }
 
   // Pre-render scanline dots 280 to 304: reload vertical bits from t to v
@@ -318,6 +306,8 @@ void sb_ppu_oam_dma_start(sb_ppu_t* ppu, uint8_t page) {
   ppu->dma_page = page;
   ppu->dma_offset = 0;
   ppu->dma_dummy = true;
+  ppu->dma_write = false;
+  ppu->dma_value = 0;
   ppu->dma_active = true;
 }
 

@@ -77,12 +77,54 @@ bool sb_nes_load_rom(sb_nes_t* nes, const char* path) {
   return true;
 }
 
+// Process one DMA cycle (called every CPU-cycle slot during active DMA).
+// Real DMA takes 513+ cycles: 1 dummy + 256 reads + 256 writes.
+// Each byte requires 2 CPU cycles (read from CPU memory, write to PPU OAM).
+static bool process_dma_cycle(sb_nes_t* nes) {
+  if (!nes) return true;
+
+  // Cycle 1: dummy read.
+  if (nes->ppu.dma_dummy) {
+    nes->ppu.dma_dummy = false;
+    return false;
+  }
+
+  // Cycle 2-513: read/write pairs for 256 bytes.
+  uint16_t src = ((uint16_t)nes->ppu.dma_page << 8) | nes->ppu.dma_offset;
+
+  if (!nes->ppu.dma_write) {
+    // Read cycle: read byte from CPU memory into temporary storage.
+    nes->ppu.dma_value = sb_bus_read(&nes->bus, src);
+    nes->ppu.dma_write = true;
+  } else {
+    // Write cycle: write byte from temporary storage to PPU OAM.
+    nes->ppu.oam[nes->ppu.dma_offset] = nes->ppu.dma_value;
+    nes->ppu.dma_offset++;
+    nes->ppu.dma_write = false;
+
+    if (nes->ppu.dma_offset == 0) {
+      // All 256 bytes transferred. DMA complete.
+      nes->ppu.dma_active = false;
+      return true;
+    }
+  }
+  return false;
+}
+
 void sb_nes_frame(sb_nes_t* nes) {
-  // Run one NTSC frame: 262 scanlines x 341 dots.
-  // PPU ticks every dot. CPU timing uses a post-instruction wait counter:
-  // each instruction consumes N CPU cycles (= N*3 PPU dots). After executing
-  // an instruction, cpu_wait is set to (cycles * 3 - 1) PPU dots. Each dot
-  // decrements cpu_wait. When cpu_wait <= 0, the next instruction runs.
+  // Cycle-interleaved main loop.
+  // PPU ticks every dot (1.79 MHz x 3 = 5.37 MHz).
+  // CPU advances ONE cycle every 3 PPU dots via sb_6502_cycle().
+  // NMI/IRQ are checked inside sb_6502_cycle's fetch_opcode at instruction
+  // boundaries. DMA is cycle-stealed: one DMA step per CPU cycle slot.
+  //
+  // sb_ppu_tick handles:
+  //   dots 1-256:  render pixels (calls sb_ppu_render_pixel)
+  //   dot 256:     Y increment (fine Y / coarse Y advance)
+  //   dot 257:     horizontal reload (v ← t horizontal bits)
+  //   dots 280-304: vertical reload (v ← t vertical bits, pre-render only)
+  //   scanline 241 dot 1: set VBlank flag, trigger NMI pending
+  //   scanline 261 dot 1: clear VBlank, sprite 0 hit, overflow flags
 
   for (int scanline = 0; scanline < SB_PPU_NTSC_SCANLINES; scanline++) {
     int dots = SB_PPU_DOTS_PER_SCANLINE;
@@ -95,44 +137,32 @@ void sb_nes_frame(sb_nes_t* nes) {
     for (int dot = 0; dot < dots; dot++) {
       sb_ppu_tick(&nes->ppu);
 
-      // Each PPU dot brings the CPU closer to its next instruction
-      nes->cpu_wait--;
+      // Every 3 PPU dots = 1 CPU cycle.
+      if (++nes->cpu_subcycle == 3) {
+        nes->cpu_subcycle = 0;
 
-      // When the wait expires, execute the next CPU instruction
-      if (nes->cpu_wait <= 0) {
-        // Check for pending NMI from PPU (must be serviced before instruction)
-        if (nes->ppu.nmi_pending) {
-          nes->ppu.nmi_pending = false;
-          sb_6502_nmi(&nes->cpu, &nes->bus);
+        // DMA steals the CPU cycle slot when active.
+        if (nes->ppu.dma_active) {
+          process_dma_cycle(nes);
+        } else {
+          // Bridge NMI from PPU to CPU (checked at instruction boundaries
+          // inside sb_6502_cycle's fetch_opcode).
+          if (nes->ppu.nmi_pending) {
+            nes->ppu.nmi_pending = false;
+            sb_6502_nmi(&nes->cpu, &nes->bus);
+          }
+          // Advance CPU by one internal cycle.
+          // The cycle handler manages instruction phases internally;
+          // sb_6502_cycle returns SB_OK when an instruction completes
+          // and automatically starts the next via fetch_opcode.
+          sb_6502_cycle(&nes->cpu, &nes->bus);
         }
-
-        // Execute one instruction. The step adds its cycle count to
-        // cpu->cycles.
-        uint64_t before = nes->cpu.cycles;
-        sb_6502_step(&nes->cpu, &nes->bus);
-        uint64_t spent = nes->cpu.cycles - before;
-
-        // Wait for the instruction's cycles * 3 PPU dots (minus this dot)
-        // A 2-cycle NOP waits 2*3-1 = 5 dots, spacing = 6 dots.
-        // A 6-cycle JSR waits 6*3-1 = 17 dots, spacing = 18 dots.
-        nes->cpu_wait = (int32_t)(spent * 3) - 1;
-      }
-
-      // Process OAM DMA when active (checked every dot, not tied to CPU step)
-      if (nes->ppu.dma_active && nes->ppu.dma_offset == 0) {
-        uint8_t page = nes->ppu.dma_page;
-        for (int i = 0; i < 256; i++) {
-          uint16_t src = ((uint16_t)page << 8) | (uint8_t)i;
-          nes->ppu.oam[i] = sb_bus_read(&nes->bus, src);
-        }
-        nes->ppu.dma_active = false;
-        // DMA steals ~513 CPU cycles from the CPU → hold off next instruction
-        nes->cpu_wait += 513 * 3;
       }
     }
   }
-  // cpu_wait persists across frame boundaries — the NMI handler may be
-  // mid-execution when the frame ends, and resumes with correct spacing.
+  // cpu_subcycle persists across frame boundaries — the CPU may be
+  // mid-instruction when the frame ends, and resumes at the correct
+  // subcycle on the next frame.
   // odd_frame is toggled inside sb_ppu_tick() at the natural frame boundary.
 }
 
