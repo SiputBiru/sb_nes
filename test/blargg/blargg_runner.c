@@ -27,7 +27,7 @@ sb_blargg_result_t sb_blargg_run(const sb_blargg_config_t* config) {
       cpu_subcycle = 0;
 
       // Tick APU frame counter (once per CPU cycle slot, even during DMA).
-      sb_apu_frame_tick(&nes.apu);
+      sb_apu_frame_tick(&nes.apu, &nes.bus);
 
       if (nes.ppu.dma_active) {
         // DMA steals the CPU cycle
