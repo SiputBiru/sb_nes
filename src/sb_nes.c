@@ -3,19 +3,16 @@
 #include <string.h>
 
 void sb_apu_frame_tick(sb_apu_t* apu) {
-  if (!apu || !apu->frame_irq_enabled) return;
+  if (!apu || !apu->frame_irq_enabled)
+    return;
 
-  apu->frame_divider++;
-  if (apu->frame_divider >= SB_APU_FRAME_DIVIDER_NTSC) {
-    apu->frame_divider = 0;
-    apu->frame_step++;
-    int max_step = apu->frame_5step ? 5 : 4;
-    if (apu->frame_step >= max_step) {
-      apu->frame_step = 0;
-      if (!apu->frame_5step) {
-        // 4-step mode: IRQ fires at step 3→0 wrap
-        apu->frame_irq_pending = true;
-      }
+  apu->frame_cycles++;
+  int max_cycles = apu->frame_5step ? SB_APU_5STEP_CYCLES : SB_APU_4STEP_CYCLES;
+  if (apu->frame_cycles >= max_cycles) {
+    apu->frame_cycles = 0;
+    if (!apu->frame_5step) {
+      // 4-step mode: IRQ fires at cycle 29829
+      apu->frame_irq_pending = true;
     }
   }
 }
@@ -34,11 +31,11 @@ uint8_t sb_apu_read(sb_apu_t* apu, uint16_t addr) {
 
 void sb_apu_write(sb_apu_t* apu, uint16_t addr, uint8_t val) {
   if (addr == 0x4017) {
-    if (!apu) return;
+    if (!apu)
+      return;
     // $4017 write: reset frame counter, clear IRQ, set mode
     apu->frame_irq_pending = false;
-    apu->frame_divider = 0;
-    apu->frame_step = 0;
+    apu->frame_cycles = 0;
     apu->frame_5step = (val & 0x80) != 0;
     apu->frame_irq_enabled = !apu->frame_5step;
   }
@@ -57,7 +54,7 @@ void sb_nes_init(sb_nes_t* nes) {
   // Wire the APU into the bus
   nes->bus.apu = &nes->apu;
 
-  // Init PPU with cartridge reference (for CHR reads)
+  // Init PPU with cartridge (for CHR reads)
   sb_ppu_init(&nes->ppu, &nes->cartridge);
 
   // Init opcode dispatch table
@@ -127,7 +124,8 @@ bool sb_nes_load_rom(sb_nes_t* nes, const char* path) {
 // Each byte transfer takes 2 sub-cycles (read + write).
 // Total: 1 dummy + 256 reads + 256 writes = 513 CPU cycles.
 static bool process_dma_cycle(sb_nes_t* nes) {
-  if (!nes) return true;
+  if (!nes)
+    return true;
 
   // Cycle 1: dummy read.
   if (nes->ppu.dma_dummy) {
@@ -194,21 +192,9 @@ void sb_nes_frame(sb_nes_t* nes) {
         if (nes->ppu.dma_active) {
           process_dma_cycle(nes);
         } else {
-          // Bridge APU IRQ to CPU (sb_6502_irq checks I flag).
-          if (nes->apu.frame_irq_pending) {
-            sb_6502_irq(&nes->cpu, &nes->bus);
-          }
-
-          // Advance CPU by one internal cycle.
-          int rc = sb_6502_cycle(&nes->cpu, &nes->bus);
-
-          // NMI bridge at INSTRUCTION BOUNDARY only.
-          // This ensures that reading $2002 (which clears VBlank) during an
-          // instruction prevents NMI from firing for that VBlank.
-          if ((rc == SB_OK || rc < 0) && nes->ppu.nmi_pending) {
-            nes->ppu.nmi_pending = false;
-            sb_6502_nmi(&nes->cpu, &nes->bus);
-          }
+          // NO bridges needed! fetch_opcode reads PPU/APU flags directly
+          // from bus->ppu and bus->apu
+          sb_6502_cycle(&nes->cpu, &nes->bus);
         }
       }
     }

@@ -1,4 +1,6 @@
 #include "sb_6502.h"
+#include "../sb_nes.h"
+#include "../sb_ppu/sb_ppu.h"
 #include <assert.h>
 
 static sb_6502_opcode_t opcodes[256];
@@ -2321,14 +2323,17 @@ static int fetch_opcode(sb_6502_t* cpu, sb_bus_t* bus) {
   assert(bus != 0);
 
   // NMI has higher priority than IRQ.
-  if (cpu->nmi_pending) {
-    cpu->nmi_pending = false;
+  // Check PPU NMI pending flag DIRECTLY
+  // Reading $2002 clears ppu->nmi_pending, so this check naturally
+  // acknowledges the NMI clear — no separate bridge needed.
+  if (bus->ppu && bus->ppu->nmi_pending) {
+    bus->ppu->nmi_pending = false;
     cpu->opcode = 0x100; // NMI sentinel (not a real opcode)
     cpu->phase = 0;
     return SB_OK;
   }
 
-  // IRQ only fires if the interrupt disable flag is clear.
+  // IRQ: check APU frame counter pending flag DIRECTLY.
   // 6502 one-instruction delay: if the I flag was just changed, the next
   // fetch uses the SAVED I flag value (before the change).
   bool check_i;
@@ -2339,8 +2344,10 @@ static int fetch_opcode(sb_6502_t* cpu, sb_bus_t* bus) {
     check_i = cpu->p & SB_6502_INTERRUPT; // use current I flag
   }
 
-  if (cpu->irq_pending && !check_i) {
-    cpu->irq_pending = false;
+  // IRQ check: APU frame counter. Don't clear frame_irq_pending here —
+  // it remains asserted until $4015 is read or $4017 is written (matching
+  // real NES behavior). The I flag set by cycle_irq prevents re-entry.
+  if (bus->apu && bus->apu->frame_irq_pending && !check_i) {
     cpu->opcode = 0x101; // IRQ sentinel (not a real opcode)
     cpu->phase = 0;
     return SB_OK;

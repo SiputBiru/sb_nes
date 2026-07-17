@@ -50,18 +50,9 @@ sb_blargg_result_t sb_blargg_run(const sb_blargg_config_t* config) {
         // Increment cycles manually because CPU is halted
         nes.cpu.cycles++;
       } else {
-        // Bridge APU IRQ to CPU (sb_6502_irq checks I flag).
-        if (nes.apu.frame_irq_pending) {
-          sb_6502_irq(&nes.cpu, &nes.bus);
-        }
-
-        int rc = sb_6502_cycle(&nes.cpu, &nes.bus);
-
-        // NMI bridge at INSTRUCTION BOUNDARY only.
-        if ((rc == SB_OK || rc < 0) && nes.ppu.nmi_pending) {
-          nes.ppu.nmi_pending = false;
-          sb_6502_nmi(&nes.cpu, &nes.bus);
-        }
+        // NO bridges needed! sb_6502_cycle's fetch_opcode reads PPU/APU
+        // pending flags directly from bus->ppu and bus->apu
+        sb_6502_cycle(&nes.cpu, &nes.bus);
       }
     }
 
