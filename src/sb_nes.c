@@ -2,7 +2,7 @@
 #include <stdio.h>
 #include <string.h>
 
-void sb_apu_frame_tick(sb_apu_t* apu) {
+void sb_apu_frame_tick(sb_apu_t* apu, sb_bus_t* bus) {
   if (!apu || !apu->frame_irq_enabled)
     return;
 
@@ -12,29 +12,31 @@ void sb_apu_frame_tick(sb_apu_t* apu) {
     apu->frame_cycles = 0;
     if (!apu->frame_5step) {
       // 4-step mode: IRQ fires at cycle 29829
-      apu->frame_irq_pending = true;
+      if (bus)
+        bus->irq_pending = true;
     }
   }
 }
 
-uint8_t sb_apu_read(sb_apu_t* apu, uint16_t addr) {
+uint8_t sb_apu_read(sb_apu_t* apu, sb_bus_t* bus, uint16_t addr) {
   if (addr == 0x4015) {
     uint8_t status = 0;
-    if (apu && apu->frame_irq_pending)
+    if (bus && bus->irq_pending)
       status |= 0x40; // bit6 = frame IRQ pending
-    if (apu)
-      apu->frame_irq_pending = false; // cleared on read
+    if (bus)
+      bus->irq_pending = false; // cleared on read
     return status;
   }
   return 0; // other APU reads not implemented
 }
 
-void sb_apu_write(sb_apu_t* apu, uint16_t addr, uint8_t val) {
+void sb_apu_write(sb_apu_t* apu, sb_bus_t* bus, uint16_t addr, uint8_t val) {
   if (addr == 0x4017) {
     if (!apu)
       return;
     // $4017 write: reset frame counter, clear IRQ, set mode
-    apu->frame_irq_pending = false;
+    if (bus)
+      bus->irq_pending = false;
     apu->frame_cycles = 0;
     apu->frame_5step = (val & 0x80) != 0;
     apu->frame_irq_enabled = !apu->frame_5step;
@@ -54,7 +56,7 @@ void sb_nes_init(sb_nes_t* nes) {
   // Wire the APU into the bus
   nes->bus.apu = &nes->apu;
 
-  // Init PPU with cartridge (for CHR reads)
+  // Init PPU with cartridge reference (for CHR reads)
   sb_ppu_init(&nes->ppu, &nes->cartridge);
 
   // Init opcode dispatch table
@@ -186,7 +188,7 @@ void sb_nes_frame(sb_nes_t* nes) {
         nes->cpu_subcycle = 0;
 
         // Tick APU frame counter (once per CPU cycle slot, even during DMA).
-        sb_apu_frame_tick(&nes->apu);
+        sb_apu_frame_tick(&nes->apu, &nes->bus);
 
         // DMA steals the CPU cycle slot when active.
         if (nes->ppu.dma_active) {

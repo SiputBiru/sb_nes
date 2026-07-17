@@ -1,7 +1,7 @@
 #include "sb_bus.h"
 #include "../sb_cartridge/sb_cartridge.h"
-#include "../sb_ppu/sb_ppu.h"
 #include "../sb_nes.h"
+#include "../sb_ppu/sb_ppu.h"
 
 uint8_t sb_bus_read(sb_bus_t* bus, uint16_t addr) {
   // split into 8KB regions
@@ -21,24 +21,24 @@ uint8_t sb_bus_read(sb_bus_t* bus, uint16_t addr) {
     if (addr < 0x4020) {
       // APU status ($4015)
       if (addr == 0x4015) {
-        bus->last_read = sb_apu_read(bus->apu, addr);
+        bus->last_read = sb_apu_read(bus->apu, bus, addr);
       } else
-      // Controller port 1 ($4016)
-      if (addr == 0x4016) {
-        if (bus->controller_strobe) {
-          // Strobe active: always return A button (bit 0), no advance
-          bus->last_read = bus->controller_bits & 1;
-        } else if (bus->controller_index > 7) {
-          // After 8 reads, open bus returns 1
-          bus->last_read = 1;
+        // Controller port 1 ($4016)
+        if (addr == 0x4016) {
+          if (bus->controller_strobe) {
+            // Strobe active: always return A button (bit 0), no advance
+            bus->last_read = bus->controller_bits & 1;
+          } else if (bus->controller_index > 7) {
+            // After 8 reads, open bus returns 1
+            bus->last_read = 1;
+          } else {
+            // Return current bit (LSB first: A=bit0, B=bit1, ...)
+            bus->last_read = (bus->controller_bits >> bus->controller_index) & 1;
+            bus->controller_index++;
+          }
         } else {
-          // Return current bit (LSB first: A=bit0, B=bit1, ...)
-          bus->last_read = (bus->controller_bits >> bus->controller_index) & 1;
-          bus->controller_index++;
+          bus->last_read = 0;
         }
-      } else {
-        bus->last_read = 0;
-      }
     } else {
       if (bus->cartridge)
         // bus->last_read = sb_cartridge_read(bus->cartridge, addr);
@@ -85,7 +85,7 @@ uint8_t sb_bus_write(sb_bus_t* bus, uint16_t addr, uint8_t val) {
       if (bus->ppu)
         sb_ppu_oam_dma_start(bus->ppu, val);
     } else if (addr == 0x4017) {
-      sb_apu_write(bus->apu, addr, val);
+      sb_apu_write(bus->apu, bus, addr, val);
     } else if (addr == 0x4016) {
       // Strobe: writing bit0=1 resets index and keeps strobe active
       // writing bit0=0 ends strobe, allowing reads to advance

@@ -7,7 +7,7 @@
 // Forward declaration (defined in sb_cartridge.h)
 struct sb_cartridge_t;
 
-typedef struct {
+typedef struct sb_bus_t {
   uint8_t wram[2048]; // Work RAM (2 KB, mirrored to 0x0800-0x1FFF)
 
   // last read value for open bus
@@ -17,6 +17,11 @@ typedef struct {
   struct sb_ppu_t* ppu;
   struct sb_apu_t* apu; // FUTURE: APU not yet implemented, always NULL
   struct sb_cartridge_t* cartridge;
+
+  // IRQ pending flag (set by APU frame counter, read by CPU at fetch).
+  // Cleared by $4015 read or $4017 write. NMI pending is in PPU struct
+  // (bus->ppu->nmi_pending), not here — PPU is on a separate bus in real HW.
+  bool irq_pending;
 
   // Controller state (player 1, $4016)
   // NES protocol: A=bit0, B=bit1, Sel=bit2, Start=bit3, Up=bit4, Dn=bit5,

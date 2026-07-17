@@ -17,8 +17,8 @@
 typedef struct sb_apu_t {
   bool frame_irq_enabled; // writes to $4017 bit7 = 0 enables frame IRQ
   bool frame_5step;       // $4017 bit7 = 1 selects 5-step mode (no IRQ)
-  bool frame_irq_pending; // IRQ set at 4-step wrap (latched until $4015 read)
-  int frame_cycles;       // cycle counter: counts 0..29828 (4-step) or 0..37280 (5-step)
+  // frame_irq_pending moved to sb_bus_t (bus->irq_pending)
+  int frame_cycles; // cycle counter: counts 0..29828 (4-step) or 0..37280 (5-step)
 } sb_apu_t;
 
 typedef struct {
@@ -38,13 +38,13 @@ typedef struct {
 
 // Tick the APU frame counter by one CPU cycle.
 // Must be called once per CPU cycle (including DMA cycles).
-void sb_apu_frame_tick(sb_apu_t* apu);
+void sb_apu_frame_tick(sb_apu_t* apu, sb_bus_t* bus);
 
 // APU register access (called by bus on $4015/$4017).
 // $4015 read:  returns status (bit6 = frame IRQ pending), clears pending IRQ.
 // $4017 write: resets frame counter, sets 4/5-step mode, clears IRQ.
-uint8_t sb_apu_read(sb_apu_t* apu, uint16_t addr);
-void sb_apu_write(sb_apu_t* apu, uint16_t addr, uint8_t val);
+uint8_t sb_apu_read(sb_apu_t* apu, sb_bus_t* bus, uint16_t addr);
+void sb_apu_write(sb_apu_t* apu, sb_bus_t* bus, uint16_t addr, uint8_t val);
 
 // Initialize all components, wire pointers, init opcode table
 void sb_nes_init(sb_nes_t* nes);

@@ -1,6 +1,7 @@
 #ifndef SB_PPU_H
 #define SB_PPU_H
 
+#include "../sb_bus/sb_bus.h"
 #include "../sb_cartridge/sb_cartridge.h"
 
 #define SB_PPU_VISIBLE_SCANLINES 240
@@ -91,10 +92,9 @@ typedef struct sb_ppu_t {
   // PPU read buffer (for PPUDATA buffered read)
   uint8_t read_buffer;
 
-  // NMI state
+  // NMI state (kept in PPU — PPU has its own bus in real hardware)
   bool nmi_previous;
   bool nmi_pending;
-
   // OAM DMA state
   bool dma_active;
   uint8_t dma_page;
