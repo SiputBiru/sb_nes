@@ -9,16 +9,16 @@
 #include <stdint.h>
 
 // Minimal APU: only frame counter IRQ (no audio).
-// The frame counter ticks once per CPU cycle and generates IRQ
-// at step 3 in 4-step mode (triggered by writing $00 to $4017).
-#define SB_APU_FRAME_DIVIDER_NTSC 7457 // CPU cycles per frame counter step
+// Frame counter IRQ fires at cycle 29829 (4-step) or 37281 (5-step).
+// 4-step wraps at 29829, 5-step at 37281.
+#define SB_APU_4STEP_CYCLES 29829 // CPU cycles per 4-step frame cycle (NTSC)
+#define SB_APU_5STEP_CYCLES 37281 // CPU cycles per 5-step frame cycle (NTSC)
 
 typedef struct sb_apu_t {
   bool frame_irq_enabled; // writes to $4017 bit7 = 0 enables frame IRQ
   bool frame_5step;       // $4017 bit7 = 1 selects 5-step mode (no IRQ)
-  bool frame_irq_pending; // IRQ triggered at step 3 (latched until $4015 read)
-  int frame_divider;      // counts CPU cycles 0..7456 between steps
-  int frame_step;         // current step (0-3 in 4-step, 0-4 in 5-step)
+  bool frame_irq_pending; // IRQ set at 4-step wrap (latched until $4015 read)
+  int frame_cycles;       // cycle counter: counts 0..29828 (4-step) or 0..37280 (5-step)
 } sb_apu_t;
 
 typedef struct {
