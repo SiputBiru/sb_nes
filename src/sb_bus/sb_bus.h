@@ -15,7 +15,7 @@ typedef struct {
 
   // Pointers to other components (set during init)
   struct sb_ppu_t* ppu;
-  struct sb_apu_t* apu;
+  struct sb_apu_t* apu; // FUTURE: APU not yet implemented, always NULL
   struct sb_cartridge_t* cartridge;
 
   // Controller state (player 1, $4016)

@@ -6,7 +6,7 @@ static sb_6502_opcode_t opcodes[256];
 static int cycle_illegal(struct sb_6502_t* cpu, sb_bus_t* bus) {
   (void)cpu;
   (void)bus;
-  // no real cycle handlers yet. Always fail.
+  // Illegal opcode fallback, no valid cycle handler assigned.
   return SB_ERR_CPU;
 }
 
@@ -104,12 +104,22 @@ static void op_ALR(sb_6502_t* cpu, sb_bus_t* bus, uint8_t opcode);
 static void op_ARR(sb_6502_t* cpu, sb_bus_t* bus, uint8_t opcode);
 static void op_LXA(sb_6502_t* cpu, sb_bus_t* bus, uint8_t opcode);
 static void op_SBX(sb_6502_t* cpu, sb_bus_t* bus, uint8_t opcode);
+static void op_SHY(sb_6502_t* cpu, sb_bus_t* bus, uint8_t opcode);
+static void op_SHX(sb_6502_t* cpu, sb_bus_t* bus, uint8_t opcode);
 
 // status flag instruction
 static void op_CLC(sb_6502_t* cpu, sb_bus_t* bus, uint8_t opcode) { cpu->p &= ~SB_6502_CARRY; }
 static void op_SEC(sb_6502_t* cpu, sb_bus_t* bus, uint8_t opcode) { cpu->p |= SB_6502_CARRY; }
-static void op_CLI(sb_6502_t* cpu, sb_bus_t* bus, uint8_t opcode) { cpu->p &= ~SB_6502_INTERRUPT; }
-static void op_SEI(sb_6502_t* cpu, sb_bus_t* bus, uint8_t opcode) { cpu->p |= SB_6502_INTERRUPT; }
+static void op_CLI(sb_6502_t* cpu, sb_bus_t* bus, uint8_t opcode) {
+  cpu->i_flag_saved = cpu->p & SB_6502_INTERRUPT; // save old I
+  cpu->p &= ~SB_6502_INTERRUPT;
+  cpu->irq_delay_next = true; // one-instruction delay
+}
+static void op_SEI(sb_6502_t* cpu, sb_bus_t* bus, uint8_t opcode) {
+  cpu->i_flag_saved = cpu->p & SB_6502_INTERRUPT; // save old I
+  cpu->p |= SB_6502_INTERRUPT;
+  cpu->irq_delay_next = true; // one-instruction delay
+}
 static void op_CLV(sb_6502_t* cpu, sb_bus_t* bus, uint8_t opcode) { cpu->p &= ~SB_6502_OVERFLOW; }
 static void op_CLD(sb_6502_t* cpu, sb_bus_t* bus, uint8_t opcode) { cpu->p &= ~SB_6502_DECIMAL; }
 static void op_SED(sb_6502_t* cpu, sb_bus_t* bus, uint8_t opcode) { cpu->p |= SB_6502_DECIMAL; }
@@ -199,9 +209,11 @@ static void op_PHP(sb_6502_t* cpu, sb_bus_t* bus, uint8_t opcode) {
 }
 static void op_PLP(sb_6502_t* cpu, sb_bus_t* bus, uint8_t opcode) {
   cpu->s++;
+  cpu->i_flag_saved = cpu->p & SB_6502_INTERRUPT; // save old I
   cpu->p = sb_bus_read(bus, 0x0100 | (uint16_t)cpu->s);
   cpu->p &= ~SB_6502_BRK;
   cpu->p |= SB_6502_UNUSED;
+  cpu->irq_delay_next = true; // I flag might have changed
 }
 
 // branches
@@ -258,10 +270,12 @@ static void op_RTS(sb_6502_t* cpu, sb_bus_t* bus, uint8_t opcode) {
 }
 static void op_RTI(sb_6502_t* cpu, sb_bus_t* bus, uint8_t opcode) {
   cpu->s++;
+  cpu->i_flag_saved = cpu->p & SB_6502_INTERRUPT; // save old I
   cpu->p = sb_bus_read(bus, 0x0100 | (uint16_t)cpu->s);
   // cpu->p &= ~(SB_6502_BRK | SB_6502_UNUSED);
   cpu->p &= ~(SB_6502_BRK);
   cpu->p |= SB_6502_UNUSED;
+  cpu->irq_delay_next = true; // I flag might have changed
   cpu->s++;
   uint8_t lo = sb_bus_read(bus, 0x0100 | (uint16_t)cpu->s);
   cpu->s++;
@@ -584,8 +598,53 @@ static void op_SBX(sb_6502_t* cpu, sb_bus_t* bus, uint8_t opcode) {
     cpu->p &= ~SB_6502_CARRY;
 }
 
-// Opcode dispatch table initialization
-// Forward declarations for cycle handlers (defined later)
+// SHY ($9C): Store Y & (base_hi + 1) at (base_hi << 8) | ((base_lo + X) & 0xFF)
+// Low byte of address wraps, no carry to high byte. Always uses H+1.
+static void op_SHY(sb_6502_t* cpu, sb_bus_t* bus, uint8_t opcode) {
+  uint16_t base = cpu->addr_abs - cpu->x;
+  uint8_t base_hi = (uint8_t)(base >> 8);
+  uint8_t lo_sum = (uint8_t)((uint8_t)base + cpu->x);
+  cpu->fetched = cpu->y & (uint8_t)(base_hi + 1);
+  cpu->addr_abs = ((uint16_t)base_hi << 8) | lo_sum;
+}
+
+// SHX ($9E): Store X & (base_hi + 1) at (base_hi << 8) | ((base_lo + Y) & 0xFF)
+static void op_SHX(sb_6502_t* cpu, sb_bus_t* bus, uint8_t opcode) {
+  uint16_t base = cpu->addr_abs - cpu->y;
+  uint8_t base_hi = (uint8_t)(base >> 8);
+  uint8_t lo_sum = (uint8_t)((uint8_t)base + cpu->y);
+  cpu->fetched = cpu->x & (uint8_t)(base_hi + 1);
+  cpu->addr_abs = ((uint16_t)base_hi << 8) | lo_sum;
+}
+
+// Helper type for category-based opcode table definitions.
+// Each entry bundles the opcode byte with its full instruction description,
+// including the cycle handler — so every definition is self-contained.
+typedef struct {
+  uint8_t opcode;
+  const char* mnemonic;
+  uint8_t bytes;
+  uint8_t cycles;
+  bool page_penalty;
+  sb_6502_result_t (*addr_mode)(sb_6502_t*, sb_bus_t*);
+  void (*func)(sb_6502_t*, sb_bus_t*, uint8_t);
+  sb_6502_cycle_fn cycle;
+} opcode_def_t;
+
+static void assign_defs(const opcode_def_t* defs, int count) {
+  for (int i = 0; i < count; i++)
+    opcodes[defs[i].opcode] = (sb_6502_opcode_t){
+      .mnemonic = defs[i].mnemonic,
+      .bytes = defs[i].bytes,
+      .cycles = defs[i].cycles,
+      .page_penalty = defs[i].page_penalty,
+      .addr_mode = defs[i].addr_mode,
+      .func = defs[i].func,
+      .cycle = defs[i].cycle,
+    };
+}
+
+// Forward declarations for cycle handlers (defined later in this file).
 static int cycle_implied(sb_6502_t* cpu, sb_bus_t* bus);
 static int cycle_read_immediate(sb_6502_t* cpu, sb_bus_t* bus);
 static int cycle_read_zp(sb_6502_t* cpu, sb_bus_t* bus);
@@ -599,6 +658,7 @@ static int cycle_write_zp(sb_6502_t* cpu, sb_bus_t* bus);
 static int cycle_write_absolute(sb_6502_t* cpu, sb_bus_t* bus);
 static int cycle_write_zpx(sb_6502_t* cpu, sb_bus_t* bus);
 static int cycle_write_absx(sb_6502_t* cpu, sb_bus_t* bus);
+static int cycle_write_absy(sb_6502_t* cpu, sb_bus_t* bus);
 static int cycle_write_idrx(sb_6502_t* cpu, sb_bus_t* bus);
 static int cycle_write_idry(sb_6502_t* cpu, sb_bus_t* bus);
 static int cycle_branch(sb_6502_t* cpu, sb_bus_t* bus);
@@ -612,7 +672,6 @@ static int cycle_push(sb_6502_t* cpu, sb_bus_t* bus);
 static int cycle_pull(sb_6502_t* cpu, sb_bus_t* bus);
 static int cycle_rmw_zp(sb_6502_t* cpu, sb_bus_t* bus);
 static int cycle_rmw_abs(sb_6502_t* cpu, sb_bus_t* bus);
-static int cycle_write_absy(sb_6502_t* cpu, sb_bus_t* bus);
 static int cycle_rmw_zpx(sb_6502_t* cpu, sb_bus_t* bus);
 static int cycle_rmw_absx(sb_6502_t* cpu, sb_bus_t* bus);
 static int cycle_rmw_absy(sb_6502_t* cpu, sb_bus_t* bus);
@@ -620,517 +679,372 @@ static int cycle_rmw_idrx(sb_6502_t* cpu, sb_bus_t* bus);
 static int cycle_rmw_idry(sb_6502_t* cpu, sb_bus_t* bus);
 
 void sb_6502_init_opcodes(void) {
+  // Fill all 256 slots with illegal fallback first.
+  for (int i = 0; i < 256; i++)
+    opcodes[i] = (sb_6502_opcode_t){
+      .mnemonic = "XX",
+      .addr_mode = addr_implied,
+      .func = op_NOP,
+      .cycle = cycle_illegal,
+    };
 
-  // default all 256 to NOP with cycle_illegal stub
-  // (real cycle handlers assigned in Phase 3)
-  for (int i = 0; i < 256; i++) {
-    opcodes[i] = (sb_6502_opcode_t){ "XX", 0, 0, false, addr_implied, op_NOP, cycle_illegal };
-  }
+  // Each category table is a complete, self-documenting list.
+  // Every entry includes its cycle handler — no second pass needed.
 
-  // LDA: 8 variants
-  opcodes[0xA9] = (sb_6502_opcode_t){ "LDA", 2, 2, false, addr_immediate, op_LDA };
-  opcodes[0xA5] = (sb_6502_opcode_t){ "LDA", 2, 3, false, addr_zero_page, op_LDA };
-  opcodes[0xB5] = (sb_6502_opcode_t){ "LDA", 2, 4, false, addr_zero_page_x, op_LDA };
-  opcodes[0xAD] = (sb_6502_opcode_t){ "LDA", 3, 4, false, addr_absolute, op_LDA };
-  opcodes[0xBD] = (sb_6502_opcode_t){ "LDA", 3, 4, true, addr_absolute_x, op_LDA };
-  opcodes[0xB9] = (sb_6502_opcode_t){ "LDA", 3, 4, true, addr_absolute_y, op_LDA };
-  opcodes[0xA1] = (sb_6502_opcode_t){ "LDA", 2, 6, false, addr_indexed_indirect, op_LDA };
-  opcodes[0xB1] = (sb_6502_opcode_t){ "LDA", 2, 5, true, addr_indirect_indexed, op_LDA };
-
-  // LDX 5 variants
-  opcodes[0xA2] = (sb_6502_opcode_t){ "LDX", 2, 2, false, addr_immediate, op_LDX };
-  opcodes[0xA6] = (sb_6502_opcode_t){ "LDX", 2, 3, false, addr_zero_page, op_LDX };
-  opcodes[0xB6] = (sb_6502_opcode_t){ "LDX", 2, 4, false, addr_zero_page_y, op_LDX };
-  opcodes[0xAE] = (sb_6502_opcode_t){ "LDX", 3, 4, false, addr_absolute, op_LDX };
-  opcodes[0xBE] = (sb_6502_opcode_t){ "LDX", 3, 4, true, addr_absolute_y, op_LDX };
-
-  // LDY: 5 variants
-  opcodes[0xA0] = (sb_6502_opcode_t){ "LDY", 2, 2, false, addr_immediate, op_LDY };
-  opcodes[0xA4] = (sb_6502_opcode_t){ "LDY", 2, 3, false, addr_zero_page, op_LDY };
-  opcodes[0xB4] = (sb_6502_opcode_t){ "LDY", 2, 4, false, addr_zero_page_x, op_LDY };
-  opcodes[0xAC] = (sb_6502_opcode_t){ "LDY", 3, 4, false, addr_absolute, op_LDY };
-  opcodes[0xBC] = (sb_6502_opcode_t){ "LDY", 3, 4, true, addr_absolute_x, op_LDY };
-
-  // STA: 7 variants (no immediate)
-  opcodes[0x85] = (sb_6502_opcode_t){ "STA", 2, 3, false, addr_zero_page, op_STA };
-  opcodes[0x95] = (sb_6502_opcode_t){ "STA", 2, 4, false, addr_zero_page_x, op_STA };
-  opcodes[0x8D] = (sb_6502_opcode_t){ "STA", 3, 4, false, addr_absolute, op_STA };
-  opcodes[0x9D] = (sb_6502_opcode_t){ "STA", 3, 5, false, addr_absolute_x, op_STA };
-  opcodes[0x99] = (sb_6502_opcode_t){ "STA", 3, 5, false, addr_absolute_y, op_STA };
-  opcodes[0x81] = (sb_6502_opcode_t){ "STA", 2, 6, false, addr_indexed_indirect, op_STA };
-  opcodes[0x91] = (sb_6502_opcode_t){ "STA", 2, 6, false, addr_indirect_indexed, op_STA };
-
-  // STX: 3 variants
-  opcodes[0x86] = (sb_6502_opcode_t){ "STX", 2, 3, false, addr_zero_page, op_STX };
-  opcodes[0x96] = (sb_6502_opcode_t){ "STX", 2, 4, false, addr_zero_page_y, op_STX };
-  opcodes[0x8E] = (sb_6502_opcode_t){ "STX", 3, 4, false, addr_absolute, op_STX };
-
-  // STY: 3 variants
-  opcodes[0x84] = (sb_6502_opcode_t){ "STY", 2, 3, false, addr_zero_page, op_STY };
-  opcodes[0x94] = (sb_6502_opcode_t){ "STY", 2, 4, false, addr_zero_page_x, op_STY };
-  opcodes[0x8C] = (sb_6502_opcode_t){ "STY", 3, 4, false, addr_absolute, op_STY };
-
-  // ADC: 8 variants
-  opcodes[0x69] = (sb_6502_opcode_t){ "ADC", 2, 2, false, addr_immediate, op_ADC };
-  opcodes[0x65] = (sb_6502_opcode_t){ "ADC", 2, 3, false, addr_zero_page, op_ADC };
-  opcodes[0x75] = (sb_6502_opcode_t){ "ADC", 2, 4, false, addr_zero_page_x, op_ADC };
-  opcodes[0x6D] = (sb_6502_opcode_t){ "ADC", 3, 4, false, addr_absolute, op_ADC };
-  opcodes[0x7D] = (sb_6502_opcode_t){ "ADC", 3, 4, true, addr_absolute_x, op_ADC };
-  opcodes[0x79] = (sb_6502_opcode_t){ "ADC", 3, 4, true, addr_absolute_y, op_ADC };
-  opcodes[0x61] = (sb_6502_opcode_t){ "ADC", 2, 6, false, addr_indexed_indirect, op_ADC };
-  opcodes[0x71] = (sb_6502_opcode_t){ "ADC", 2, 5, true, addr_indirect_indexed, op_ADC };
-
-  // SBC: 8 variants
-  opcodes[0xE9] = (sb_6502_opcode_t){ "SBC", 2, 2, false, addr_immediate, op_SBC };
-  opcodes[0xE5] = (sb_6502_opcode_t){ "SBC", 2, 3, false, addr_zero_page, op_SBC };
-  opcodes[0xF5] = (sb_6502_opcode_t){ "SBC", 2, 4, false, addr_zero_page_x, op_SBC };
-  opcodes[0xED] = (sb_6502_opcode_t){ "SBC", 3, 4, false, addr_absolute, op_SBC };
-  opcodes[0xFD] = (sb_6502_opcode_t){ "SBC", 3, 4, true, addr_absolute_x, op_SBC };
-  opcodes[0xF9] = (sb_6502_opcode_t){ "SBC", 3, 4, true, addr_absolute_y, op_SBC };
-  opcodes[0xE1] = (sb_6502_opcode_t){ "SBC", 2, 6, false, addr_indexed_indirect, op_SBC };
-  opcodes[0xF1] = (sb_6502_opcode_t){ "SBC", 2, 5, true, addr_indirect_indexed, op_SBC };
-
-  // undocumented SBC ( same as $E9 )
-  opcodes[0xEB] = (sb_6502_opcode_t){ "SBC", 2, 2, false, addr_immediate, op_SBC };
-
-  // AND: 8 variants
-  opcodes[0x29] = (sb_6502_opcode_t){ "AND", 2, 2, false, addr_immediate, op_AND };
-  opcodes[0x25] = (sb_6502_opcode_t){ "AND", 2, 3, false, addr_zero_page, op_AND };
-  opcodes[0x35] = (sb_6502_opcode_t){ "AND", 2, 4, false, addr_zero_page_x, op_AND };
-  opcodes[0x2D] = (sb_6502_opcode_t){ "AND", 3, 4, false, addr_absolute, op_AND };
-  opcodes[0x3D] = (sb_6502_opcode_t){ "AND", 3, 4, true, addr_absolute_x, op_AND };
-  opcodes[0x39] = (sb_6502_opcode_t){ "AND", 3, 4, true, addr_absolute_y, op_AND };
-  opcodes[0x21] = (sb_6502_opcode_t){ "AND", 2, 6, false, addr_indexed_indirect, op_AND };
-  opcodes[0x31] = (sb_6502_opcode_t){ "AND", 2, 5, true, addr_indirect_indexed, op_AND };
-
-  // ORA: 8 variants
-  opcodes[0x09] = (sb_6502_opcode_t){ "ORA", 2, 2, false, addr_immediate, op_ORA };
-  opcodes[0x05] = (sb_6502_opcode_t){ "ORA", 2, 3, false, addr_zero_page, op_ORA };
-  opcodes[0x15] = (sb_6502_opcode_t){ "ORA", 2, 4, false, addr_zero_page_x, op_ORA };
-  opcodes[0x0D] = (sb_6502_opcode_t){ "ORA", 3, 4, false, addr_absolute, op_ORA };
-  opcodes[0x1D] = (sb_6502_opcode_t){ "ORA", 3, 4, true, addr_absolute_x, op_ORA };
-  opcodes[0x19] = (sb_6502_opcode_t){ "ORA", 3, 4, true, addr_absolute_y, op_ORA };
-  opcodes[0x01] = (sb_6502_opcode_t){ "ORA", 2, 6, false, addr_indexed_indirect, op_ORA };
-  opcodes[0x11] = (sb_6502_opcode_t){ "ORA", 2, 5, true, addr_indirect_indexed, op_ORA };
-
-  // EOR: 8 variants
-  opcodes[0x49] = (sb_6502_opcode_t){ "EOR", 2, 2, false, addr_immediate, op_EOR };
-  opcodes[0x45] = (sb_6502_opcode_t){ "EOR", 2, 3, false, addr_zero_page, op_EOR };
-  opcodes[0x55] = (sb_6502_opcode_t){ "EOR", 2, 4, false, addr_zero_page_x, op_EOR };
-  opcodes[0x4D] = (sb_6502_opcode_t){ "EOR", 3, 4, false, addr_absolute, op_EOR };
-  opcodes[0x5D] = (sb_6502_opcode_t){ "EOR", 3, 4, true, addr_absolute_x, op_EOR };
-  opcodes[0x59] = (sb_6502_opcode_t){ "EOR", 3, 4, true, addr_absolute_y, op_EOR };
-  opcodes[0x41] = (sb_6502_opcode_t){ "EOR", 2, 6, false, addr_indexed_indirect, op_EOR };
-  opcodes[0x51] = (sb_6502_opcode_t){ "EOR", 2, 5, true, addr_indirect_indexed, op_EOR };
-
-  // CMP: 8 variants
-  opcodes[0xC9] = (sb_6502_opcode_t){ "CMP", 2, 2, false, addr_immediate, op_CMP };
-  opcodes[0xC5] = (sb_6502_opcode_t){ "CMP", 2, 3, false, addr_zero_page, op_CMP };
-  opcodes[0xD5] = (sb_6502_opcode_t){ "CMP", 2, 4, false, addr_zero_page_x, op_CMP };
-  opcodes[0xCD] = (sb_6502_opcode_t){ "CMP", 3, 4, false, addr_absolute, op_CMP };
-  opcodes[0xDD] = (sb_6502_opcode_t){ "CMP", 3, 4, true, addr_absolute_x, op_CMP };
-  opcodes[0xD9] = (sb_6502_opcode_t){ "CMP", 3, 4, true, addr_absolute_y, op_CMP };
-  opcodes[0xC1] = (sb_6502_opcode_t){ "CMP", 2, 6, false, addr_indexed_indirect, op_CMP };
-  opcodes[0xD1] = (sb_6502_opcode_t){ "CMP", 2, 5, true, addr_indirect_indexed, op_CMP };
-
-  // CPX: 3 variants
-  opcodes[0xE0] = (sb_6502_opcode_t){ "CPX", 2, 2, false, addr_immediate, op_CPX };
-  opcodes[0xE4] = (sb_6502_opcode_t){ "CPX", 2, 3, false, addr_zero_page, op_CPX };
-  opcodes[0xEC] = (sb_6502_opcode_t){ "CPX", 3, 4, false, addr_absolute, op_CPX };
-
-  // CPY: 3 variants
-  opcodes[0xC0] = (sb_6502_opcode_t){ "CPY", 2, 2, false, addr_immediate, op_CPY };
-  opcodes[0xC4] = (sb_6502_opcode_t){ "CPY", 2, 3, false, addr_zero_page, op_CPY };
-  opcodes[0xCC] = (sb_6502_opcode_t){ "CPY", 3, 4, false, addr_absolute, op_CPY };
-
-  // BIT: 2 variants
-  opcodes[0x24] = (sb_6502_opcode_t){ "BIT", 2, 3, false, addr_zero_page, op_BIT };
-  opcodes[0x2C] = (sb_6502_opcode_t){ "BIT", 3, 4, false, addr_absolute, op_BIT };
-
-  // ASL: 5 variants
-  opcodes[0x0A] = (sb_6502_opcode_t){ "ASL", 1, 2, false, addr_accumulator, op_ASL };
-  opcodes[0x06] = (sb_6502_opcode_t){ "ASL", 2, 5, false, addr_zero_page, op_ASL };
-  opcodes[0x16] = (sb_6502_opcode_t){ "ASL", 2, 6, false, addr_zero_page_x, op_ASL };
-  opcodes[0x0E] = (sb_6502_opcode_t){ "ASL", 3, 6, false, addr_absolute, op_ASL };
-  opcodes[0x1E] = (sb_6502_opcode_t){ "ASL", 3, 7, false, addr_absolute_x, op_ASL };
-
-  // LSR: 5 variants
-  opcodes[0x4A] = (sb_6502_opcode_t){ "LSR", 1, 2, false, addr_accumulator, op_LSR };
-  opcodes[0x46] = (sb_6502_opcode_t){ "LSR", 2, 5, false, addr_zero_page, op_LSR };
-  opcodes[0x56] = (sb_6502_opcode_t){ "LSR", 2, 6, false, addr_zero_page_x, op_LSR };
-  opcodes[0x4E] = (sb_6502_opcode_t){ "LSR", 3, 6, false, addr_absolute, op_LSR };
-  opcodes[0x5E] = (sb_6502_opcode_t){ "LSR", 3, 7, false, addr_absolute_x, op_LSR };
-
-  // ROL: 5 variants
-  opcodes[0x2A] = (sb_6502_opcode_t){ "ROL", 1, 2, false, addr_accumulator, op_ROL };
-  opcodes[0x26] = (sb_6502_opcode_t){ "ROL", 2, 5, false, addr_zero_page, op_ROL };
-  opcodes[0x36] = (sb_6502_opcode_t){ "ROL", 2, 6, false, addr_zero_page_x, op_ROL };
-  opcodes[0x2E] = (sb_6502_opcode_t){ "ROL", 3, 6, false, addr_absolute, op_ROL };
-  opcodes[0x3E] = (sb_6502_opcode_t){ "ROL", 3, 7, false, addr_absolute_x, op_ROL };
-
-  // ROR: 5 variants
-  opcodes[0x6A] = (sb_6502_opcode_t){ "ROR", 1, 2, false, addr_accumulator, op_ROR };
-  opcodes[0x66] = (sb_6502_opcode_t){ "ROR", 2, 5, false, addr_zero_page, op_ROR };
-  opcodes[0x76] = (sb_6502_opcode_t){ "ROR", 2, 6, false, addr_zero_page_x, op_ROR };
-  opcodes[0x6E] = (sb_6502_opcode_t){ "ROR", 3, 6, false, addr_absolute, op_ROR };
-  opcodes[0x7E] = (sb_6502_opcode_t){ "ROR", 3, 7, false, addr_absolute_x, op_ROR };
-
-  // INC: 4 variants
-  opcodes[0xE6] = (sb_6502_opcode_t){ "INC", 2, 5, false, addr_zero_page, op_INC };
-  opcodes[0xF6] = (sb_6502_opcode_t){ "INC", 2, 6, false, addr_zero_page_x, op_INC };
-  opcodes[0xEE] = (sb_6502_opcode_t){ "INC", 3, 6, false, addr_absolute, op_INC };
-  opcodes[0xFE] = (sb_6502_opcode_t){ "INC", 3, 7, false, addr_absolute_x, op_INC };
-
-  // DEC: 4 variants
-  opcodes[0xC6] = (sb_6502_opcode_t){ "DEC", 2, 5, false, addr_zero_page, op_DEC };
-  opcodes[0xD6] = (sb_6502_opcode_t){ "DEC", 2, 6, false, addr_zero_page_x, op_DEC };
-  opcodes[0xCE] = (sb_6502_opcode_t){ "DEC", 3, 6, false, addr_absolute, op_DEC };
-  opcodes[0xDE] = (sb_6502_opcode_t){ "DEC", 3, 7, false, addr_absolute_x, op_DEC };
-
-  // Implied / register instructions (all 1 byte, implied)
-  opcodes[0x8A] = (sb_6502_opcode_t){ "TXA", 1, 2, false, addr_implied, op_TXA };
-  opcodes[0x9A] = (sb_6502_opcode_t){ "TXS", 1, 2, false, addr_implied, op_TXS };
-  opcodes[0x98] = (sb_6502_opcode_t){ "TYA", 1, 2, false, addr_implied, op_TYA };
-  opcodes[0xAA] = (sb_6502_opcode_t){ "TAX", 1, 2, false, addr_implied, op_TAX };
-  opcodes[0xA8] = (sb_6502_opcode_t){ "TAY", 1, 2, false, addr_implied, op_TAY };
-  opcodes[0xBA] = (sb_6502_opcode_t){ "TSX", 1, 2, false, addr_implied, op_TSX };
-  opcodes[0xE8] = (sb_6502_opcode_t){ "INX", 1, 2, false, addr_implied, op_INX };
-  opcodes[0xC8] = (sb_6502_opcode_t){ "INY", 1, 2, false, addr_implied, op_INY };
-  opcodes[0xCA] = (sb_6502_opcode_t){ "DEX", 1, 2, false, addr_implied, op_DEX };
-  opcodes[0x88] = (sb_6502_opcode_t){ "DEY", 1, 2, false, addr_implied, op_DEY };
-
-  // Stack instructions
-  opcodes[0x48] = (sb_6502_opcode_t){ "PHA", 1, 3, false, addr_implied, op_PHA };
-  opcodes[0x68] = (sb_6502_opcode_t){ "PLA", 1, 4, false, addr_implied, op_PLA };
-  opcodes[0x08] = (sb_6502_opcode_t){ "PHP", 1, 3, false, addr_implied, op_PHP };
-  opcodes[0x28] = (sb_6502_opcode_t){ "PLP", 1, 4, false, addr_implied, op_PLP };
-
-  // Jumps
-  opcodes[0x4C] = (sb_6502_opcode_t){ "JMP", 3, 3, false, addr_absolute, op_JMP };
-  opcodes[0x6C] = (sb_6502_opcode_t){ "JMP", 3, 5, false, addr_indirect, op_JMP };
-  opcodes[0x20] = (sb_6502_opcode_t){ "JSR", 3, 6, false, addr_absolute, op_JSR };
-  opcodes[0x60] = (sb_6502_opcode_t){ "RTS", 1, 6, false, addr_implied, op_RTS };
-  opcodes[0x40] = (sb_6502_opcode_t){ "RTI", 1, 6, false, addr_implied, op_RTI };
-
-  // Branches
-  opcodes[0x90] = (sb_6502_opcode_t){ "BCC", 2, 2, true, addr_relative, op_BCC };
-  opcodes[0xB0] = (sb_6502_opcode_t){ "BCS", 2, 2, true, addr_relative, op_BCS };
-  opcodes[0xF0] = (sb_6502_opcode_t){ "BEQ", 2, 2, true, addr_relative, op_BEQ };
-  opcodes[0xD0] = (sb_6502_opcode_t){ "BNE", 2, 2, true, addr_relative, op_BNE };
-  opcodes[0x30] = (sb_6502_opcode_t){ "BMI", 2, 2, true, addr_relative, op_BMI };
-  opcodes[0x10] = (sb_6502_opcode_t){ "BPL", 2, 2, true, addr_relative, op_BPL };
-  opcodes[0x50] = (sb_6502_opcode_t){ "BVC", 2, 2, true, addr_relative, op_BVC };
-  opcodes[0x70] = (sb_6502_opcode_t){ "BVS", 2, 2, true, addr_relative, op_BVS };
-
-  // Status flag instructions
-  opcodes[0x18] = (sb_6502_opcode_t){ "CLC", 1, 2, false, addr_implied, op_CLC };
-  opcodes[0x38] = (sb_6502_opcode_t){ "SEC", 1, 2, false, addr_implied, op_SEC };
-  opcodes[0x58] = (sb_6502_opcode_t){ "CLI", 1, 2, false, addr_implied, op_CLI };
-  opcodes[0x78] = (sb_6502_opcode_t){ "SEI", 1, 2, false, addr_implied, op_SEI };
-  opcodes[0xB8] = (sb_6502_opcode_t){ "CLV", 1, 2, false, addr_implied, op_CLV };
-  opcodes[0xD8] = (sb_6502_opcode_t){ "CLD", 1, 2, false, addr_implied, op_CLD };
-  opcodes[0xF8] = (sb_6502_opcode_t){ "SED", 1, 2, false, addr_implied, op_SED };
-
-  // NOP variants (the official ones)
-  opcodes[0xEA] = (sb_6502_opcode_t){ "NOP", 1, 2, false, addr_implied, op_NOP };
-
-  // 1-byte NOPs
-  opcodes[0x1A] = (sb_6502_opcode_t){ "NOP", 1, 2, false, addr_implied, op_NOP };
-  opcodes[0x3A] = (sb_6502_opcode_t){ "NOP", 1, 2, false, addr_implied, op_NOP };
-  opcodes[0x5A] = (sb_6502_opcode_t){ "NOP", 1, 2, false, addr_implied, op_NOP };
-  opcodes[0x7A] = (sb_6502_opcode_t){ "NOP", 1, 2, false, addr_implied, op_NOP };
-  opcodes[0xDA] = (sb_6502_opcode_t){ "NOP", 1, 2, false, addr_implied, op_NOP };
-  opcodes[0xFA] = (sb_6502_opcode_t){ "NOP", 1, 2, false, addr_implied, op_NOP };
-
-  // 2-byte NOPs (immediate — reads 1 byte and ignores it)
-  opcodes[0xE2] = (sb_6502_opcode_t){ "NOP", 2, 2, false, addr_immediate, op_NOP };
-  opcodes[0x04] = (sb_6502_opcode_t){ "NOP", 2, 3, false, addr_immediate, op_NOP };
-  opcodes[0x44] = (sb_6502_opcode_t){ "NOP", 2, 3, false, addr_immediate, op_NOP };
-  opcodes[0x64] = (sb_6502_opcode_t){ "NOP", 2, 3, false, addr_immediate, op_NOP };
-  opcodes[0x14] = (sb_6502_opcode_t){ "NOP", 2, 4, false, addr_immediate, op_NOP };
-  opcodes[0x34] = (sb_6502_opcode_t){ "NOP", 2, 4, false, addr_immediate, op_NOP };
-  opcodes[0x54] = (sb_6502_opcode_t){ "NOP", 2, 4, false, addr_immediate, op_NOP };
-  opcodes[0x74] = (sb_6502_opcode_t){ "NOP", 2, 4, false, addr_immediate, op_NOP };
-  opcodes[0xD4] = (sb_6502_opcode_t){ "NOP", 2, 4, false, addr_immediate, op_NOP };
-  opcodes[0xF4] = (sb_6502_opcode_t){ "NOP", 2, 4, false, addr_immediate, op_NOP };
-  opcodes[0x80] = (sb_6502_opcode_t){ "NOP", 2, 2, false, addr_immediate, op_NOP };
-  opcodes[0x82] = (sb_6502_opcode_t){ "NOP", 2, 2, false, addr_immediate, op_NOP };
-  opcodes[0x89] = (sb_6502_opcode_t){ "NOP", 2, 2, false, addr_immediate, op_NOP };
-  opcodes[0xC2] = (sb_6502_opcode_t){ "NOP", 2, 2, false, addr_immediate, op_NOP };
-
-  // 3-byte NOP (absolute)
-  opcodes[0x0C] = (sb_6502_opcode_t){ "NOP", 3, 4, false, addr_absolute, op_NOP };
-
-  // 3-byte NOP (absolute.x)
-  opcodes[0x1C] = (sb_6502_opcode_t){ "NOP", 3, 4, true, addr_absolute_x, op_NOP };
-  opcodes[0x3C] = (sb_6502_opcode_t){ "NOP", 3, 4, true, addr_absolute_x, op_NOP };
-  opcodes[0x5C] = (sb_6502_opcode_t){ "NOP", 3, 4, true, addr_absolute_x, op_NOP };
-  opcodes[0x7C] = (sb_6502_opcode_t){ "NOP", 3, 4, true, addr_absolute_x, op_NOP };
-  opcodes[0xDC] = (sb_6502_opcode_t){ "NOP", 3, 4, true, addr_absolute_x, op_NOP };
-  opcodes[0xFC] = (sb_6502_opcode_t){ "NOP", 3, 4, true, addr_absolute_x, op_NOP };
-  // BRK
-  opcodes[0x00] = (sb_6502_opcode_t){ "BRK", 2, 7, false, addr_implied, op_BRK };
-
-  // Illegal opcodes (used by games / nestest)
-  opcodes[0xA7] = (sb_6502_opcode_t){ "LAX", 2, 3, false, addr_zero_page, op_LAX };
-  opcodes[0xB7] = (sb_6502_opcode_t){ "LAX", 2, 4, false, addr_zero_page_y, op_LAX };
-  opcodes[0xAF] = (sb_6502_opcode_t){ "LAX", 3, 4, false, addr_absolute, op_LAX };
-  opcodes[0xBF] = (sb_6502_opcode_t){ "LAX", 3, 4, true, addr_absolute_y, op_LAX };
-  opcodes[0xA3] = (sb_6502_opcode_t){ "LAX", 2, 6, false, addr_indexed_indirect, op_LAX };
-  opcodes[0xB3] = (sb_6502_opcode_t){ "LAX", 2, 5, true, addr_indirect_indexed, op_LAX };
-
-  opcodes[0x87] = (sb_6502_opcode_t){ "SAX", 2, 3, false, addr_zero_page, op_SAX };
-  opcodes[0x97] = (sb_6502_opcode_t){ "SAX", 2, 4, false, addr_zero_page_y, op_SAX };
-  opcodes[0x8F] = (sb_6502_opcode_t){ "SAX", 3, 4, false, addr_absolute, op_SAX };
-  opcodes[0x83] = (sb_6502_opcode_t){ "SAX", 2, 6, false, addr_indexed_indirect, op_SAX };
-
-  opcodes[0xC7] = (sb_6502_opcode_t){ "DCP", 2, 5, false, addr_zero_page, op_DCP };
-  opcodes[0xD7] = (sb_6502_opcode_t){ "DCP", 2, 6, false, addr_zero_page_x, op_DCP };
-  opcodes[0xCF] = (sb_6502_opcode_t){ "DCP", 3, 6, false, addr_absolute, op_DCP };
-  opcodes[0xDF] = (sb_6502_opcode_t){ "DCP", 3, 7, false, addr_absolute_x, op_DCP };
-  opcodes[0xDB] = (sb_6502_opcode_t){ "DCP", 3, 7, false, addr_absolute_y, op_DCP };
-  opcodes[0xC3] = (sb_6502_opcode_t){ "DCP", 2, 8, false, addr_indexed_indirect, op_DCP };
-  opcodes[0xD3] = (sb_6502_opcode_t){ "DCP", 2, 8, false, addr_indirect_indexed, op_DCP };
-
-  opcodes[0xE7] = (sb_6502_opcode_t){ "ISB", 2, 5, false, addr_zero_page, op_ISB };
-  opcodes[0xF7] = (sb_6502_opcode_t){ "ISB", 2, 6, false, addr_zero_page_x, op_ISB };
-  opcodes[0xEF] = (sb_6502_opcode_t){ "ISB", 3, 6, false, addr_absolute, op_ISB };
-  opcodes[0xFF] = (sb_6502_opcode_t){ "ISB", 3, 7, false, addr_absolute_x, op_ISB };
-  opcodes[0xFB] = (sb_6502_opcode_t){ "ISB", 3, 7, false, addr_absolute_y, op_ISB };
-  opcodes[0xE3] = (sb_6502_opcode_t){ "ISB", 2, 8, false, addr_indexed_indirect, op_ISB };
-  opcodes[0xF3] = (sb_6502_opcode_t){ "ISB", 2, 8, false, addr_indirect_indexed, op_ISB };
-
-  opcodes[0x07] = (sb_6502_opcode_t){ "SLO", 2, 5, false, addr_zero_page, op_SLO };
-  opcodes[0x17] = (sb_6502_opcode_t){ "SLO", 2, 6, false, addr_zero_page_x, op_SLO };
-  opcodes[0x0F] = (sb_6502_opcode_t){ "SLO", 3, 6, false, addr_absolute, op_SLO };
-  opcodes[0x1F] = (sb_6502_opcode_t){ "SLO", 3, 7, false, addr_absolute_x, op_SLO };
-  opcodes[0x1B] = (sb_6502_opcode_t){ "SLO", 3, 7, false, addr_absolute_y, op_SLO };
-  opcodes[0x03] = (sb_6502_opcode_t){ "SLO", 2, 8, false, addr_indexed_indirect, op_SLO };
-  opcodes[0x13] = (sb_6502_opcode_t){ "SLO", 2, 8, false, addr_indirect_indexed, op_SLO };
-
-  opcodes[0x27] = (sb_6502_opcode_t){ "RLA", 2, 5, false, addr_zero_page, op_RLA };
-  opcodes[0x37] = (sb_6502_opcode_t){ "RLA", 2, 6, false, addr_zero_page_x, op_RLA };
-  opcodes[0x2F] = (sb_6502_opcode_t){ "RLA", 3, 6, false, addr_absolute, op_RLA };
-  opcodes[0x3F] = (sb_6502_opcode_t){ "RLA", 3, 7, false, addr_absolute_x, op_RLA };
-  opcodes[0x3B] = (sb_6502_opcode_t){ "RLA", 3, 7, false, addr_absolute_y, op_RLA };
-  opcodes[0x23] = (sb_6502_opcode_t){ "RLA", 2, 8, false, addr_indexed_indirect, op_RLA };
-  opcodes[0x33] = (sb_6502_opcode_t){ "RLA", 2, 8, false, addr_indirect_indexed, op_RLA };
-
-  opcodes[0x47] = (sb_6502_opcode_t){ "SRE", 2, 5, false, addr_zero_page, op_SRE };
-  opcodes[0x57] = (sb_6502_opcode_t){ "SRE", 2, 6, false, addr_zero_page_x, op_SRE };
-  opcodes[0x4F] = (sb_6502_opcode_t){ "SRE", 3, 6, false, addr_absolute, op_SRE };
-  opcodes[0x5F] = (sb_6502_opcode_t){ "SRE", 3, 7, false, addr_absolute_x, op_SRE };
-  opcodes[0x5B] = (sb_6502_opcode_t){ "SRE", 3, 7, false, addr_absolute_y, op_SRE };
-  opcodes[0x43] = (sb_6502_opcode_t){ "SRE", 2, 8, false, addr_indexed_indirect, op_SRE };
-  opcodes[0x53] = (sb_6502_opcode_t){ "SRE", 2, 8, false, addr_indirect_indexed, op_SRE };
-
-  opcodes[0x67] = (sb_6502_opcode_t){ "RRA", 2, 5, false, addr_zero_page, op_RRA };
-  opcodes[0x77] = (sb_6502_opcode_t){ "RRA", 2, 6, false, addr_zero_page_x, op_RRA };
-  opcodes[0x6F] = (sb_6502_opcode_t){ "RRA", 3, 6, false, addr_absolute, op_RRA };
-  opcodes[0x7F] = (sb_6502_opcode_t){ "RRA", 3, 7, false, addr_absolute_x, op_RRA };
-  opcodes[0x7B] = (sb_6502_opcode_t){ "RRA", 3, 7, false, addr_absolute_y, op_RRA };
-  opcodes[0x63] = (sb_6502_opcode_t){ "RRA", 2, 8, false, addr_indexed_indirect, op_RRA };
-  opcodes[0x73] = (sb_6502_opcode_t){ "RRA", 2, 8, false, addr_indirect_indexed, op_RRA };
-  opcodes[0x0B] = (sb_6502_opcode_t){ "ANC", 2, 2, false, addr_immediate, op_ANC };
-  opcodes[0x2B] = (sb_6502_opcode_t){ "ANC", 2, 2, false, addr_immediate, op_ANC };
-  opcodes[0x4B] = (sb_6502_opcode_t){ "ALR", 2, 2, false, addr_immediate, op_ALR };
-  opcodes[0x6B] = (sb_6502_opcode_t){ "ARR", 2, 2, false, addr_immediate, op_ARR };
-  opcodes[0xAB] = (sb_6502_opcode_t){ "LXA", 2, 2, false, addr_immediate, op_LXA };
-  opcodes[0xCB] = (sb_6502_opcode_t){ "SBX", 2, 2, false, addr_immediate, op_SBX };
-
-  // Safety fill: every opcode needs a cycle handler.
-  // Individually-assigned opcodes above don't set the cycle field
-  // (C99 partial-zero-init leaves it NULL). Fill the illegal stub
-  // so sb_6502_cycle always has a valid dispatch target.
-  for (int i = 0; i < 256; i++) {
-    if (opcodes[i].cycle == 0)
-      opcodes[i].cycle = cycle_illegal;
-  }
-
-  // Phase 3 Step 1: Assign cycle handlers for Implied/Register instructions.
-  // These are 2-cycle instructions: opcode fetch + internal register op.
-  static const uint8_t implied_list[] = {
-    0xAA, 0x8A, 0xA8, 0x98, 0xBA, 0x9A,       // TAX, TXA, TAY, TYA, TSX, TXS
-    0xCA, 0x88, 0xE8, 0xC8,                   // DEX, DEY, INX, INY
-    0x18, 0x38, 0x58, 0x78, 0xB8, 0xD8, 0xF8, // CLC, SEC, CLI, SEI, CLV, CLD, SED
-    0xEA,                                     // NOP
-    0x1A, 0x3A, 0x5A, 0x7A, 0xDA, 0xFA,       // extra NOPs (implied)
-    0x0A, 0x4A, 0x2A, 0x6A,                   // ASL A, LSR A, ROL A, ROR A
+  static const opcode_def_t lda[] = {
+    { 0xA9, "LDA", 2, 2, false, addr_immediate, op_LDA, cycle_read_immediate },
+    { 0xA5, "LDA", 2, 3, false, addr_zero_page, op_LDA, cycle_read_zp },
+    { 0xB5, "LDA", 2, 4, false, addr_zero_page_x, op_LDA, cycle_read_zpx },
+    { 0xAD, "LDA", 3, 4, false, addr_absolute, op_LDA, cycle_read_absolute },
+    { 0xBD, "LDA", 3, 4, true, addr_absolute_x, op_LDA, cycle_read_absx },
+    { 0xB9, "LDA", 3, 4, true, addr_absolute_y, op_LDA, cycle_read_absy },
+    { 0xA1, "LDA", 2, 6, false, addr_indexed_indirect, op_LDA, cycle_read_idrx },
+    { 0xB1, "LDA", 2, 5, true, addr_indirect_indexed, op_LDA, cycle_read_idry },
   };
-  for (int i = 0; i < (int)(sizeof(implied_list)); i++)
-    opcodes[implied_list[i]].cycle = cycle_implied;
+  assign_defs(lda, sizeof(lda) / sizeof(lda[0]));
 
-  // Phase 3 Step 2: Read Immediate instructions (2 cycles).
-  static const uint8_t imm_list[] = {
-    0xA9, 0xA2, 0xA0,                   // LDA, LDX, LDY
-    0x09, 0x29, 0x49,                   // ORA, AND, EOR
-    0x69, 0xE9,                         // ADC, SBC
-    0xC9, 0xE0, 0xC0,                   // CMP, CPX, CPY
-    0xEB,                               // SBC (illegal)
-    0x80, 0x82, 0x89, 0xC2, 0xE2,       // immediate NOPs (illegal)
-    0x0B, 0x2B, 0x4B, 0x6B, 0xAB, 0xCB, // ANC, ANC, ALR, ARR, LXA, SBX (illegal)
+  static const opcode_def_t ldx[] = {
+    { 0xA2, "LDX", 2, 2, false, addr_immediate, op_LDX, cycle_read_immediate },
+    { 0xA6, "LDX", 2, 3, false, addr_zero_page, op_LDX, cycle_read_zp },
+    { 0xB6, "LDX", 2, 4, false, addr_zero_page_y, op_LDX, cycle_read_zpx },
+    { 0xAE, "LDX", 3, 4, false, addr_absolute, op_LDX, cycle_read_absolute },
+    { 0xBE, "LDX", 3, 4, true, addr_absolute_y, op_LDX, cycle_read_absy },
   };
-  for (int i = 0; i < (int)(sizeof(imm_list)); i++)
-    opcodes[imm_list[i]].cycle = cycle_read_immediate;
+  assign_defs(ldx, sizeof(ldx) / sizeof(ldx[0]));
 
-  // Phase 3 Step 3: Read Zero Page (3 cycles).
-  // Phase 3 Step 4: Read Absolute (4 cycles).
-  // Phase 3 Step 5: Read Zero Page,X (4 cycles).
-  // Phase 3 Step 6: Read Absolute,X (4+1 cycles).
-  static const uint8_t zp_list[] = {
-    0xA5, 0xA6, 0xA4, // LDA, LDX, LDY zp
-    0x25, 0x05, 0x45, // AND, ORA, EOR zp
-    0x65, 0xE5,       // ADC, SBC zp
-    0xC5, 0xE4, 0xC4, // CMP, CPX, CPY zp
-    0x24,             // BIT zp
-    0xA7,             // LAX zp (illegal)
-    0x04, 0x44, 0x64, // zero-page NOPs (illegal)
+  static const opcode_def_t ldy[] = {
+    { 0xA0, "LDY", 2, 2, false, addr_immediate, op_LDY, cycle_read_immediate },
+    { 0xA4, "LDY", 2, 3, false, addr_zero_page, op_LDY, cycle_read_zp },
+    { 0xB4, "LDY", 2, 4, false, addr_zero_page_x, op_LDY, cycle_read_zpx },
+    { 0xAC, "LDY", 3, 4, false, addr_absolute, op_LDY, cycle_read_absolute },
+    { 0xBC, "LDY", 3, 4, true, addr_absolute_x, op_LDY, cycle_read_absx },
   };
-  static const uint8_t abs_list[] = {
-    0xAD, 0xAE, 0xAC, // LDA, LDX, LDY abs
-    0x2D, 0x0D, 0x4D, // AND, ORA, EOR abs
-    0x6D, 0xED,       // ADC, SBC abs
-    0xCD, 0xEC, 0xCC, // CMP, CPX, CPY abs
-    0x2C,             // BIT abs
-    0xAF,             // LAX abs (illegal)
-    0x0C,             // abs NOP (illegal)
-  };
-  static const uint8_t zpx_list[] = {
-    0xB5,                               // LDA zp,X
-    0xB4,                               // LDY zp,X
-    0x35, 0x15, 0x55,                   // AND, ORA, EOR zp,X
-    0x75, 0xF5,                         // ADC, SBC zp,X
-    0xD5,                               // CMP zp,X
-    0xB6,                               // LDX zp,Y
-    0x14, 0x34, 0x54, 0x74, 0xD4, 0xF4, // zp,X NOPs (illegal)
-  };
-  static const uint8_t absx_list[] = {
-    0xBD, 0xBC, 0xB9,                   // LDA abs,X, LDY abs,X, LDA abs,Y
-    0xBE,                               // LDX abs,Y
-    0x3D, 0x1D, 0x5D,                   // AND abs,X, ORA abs,X, EOR abs,X
-    0x39, 0x19, 0x59,                   // AND abs,Y, ORA abs,Y, EOR abs,Y
-    0x7D, 0xFD,                         // ADC abs,X, SBC abs,X
-    0x79, 0xF9,                         // ADC abs,Y, SBC abs,Y
-    0xDD, 0xD9,                         // CMP abs,X, CMP abs,Y
-    0x1C, 0x3C, 0x5C, 0x7C, 0xDC, 0xFC, // abs,X NOPs (illegal)
-  };
-  for (int i = 0; i < (int)(sizeof(zp_list)); i++)
-    opcodes[zp_list[i]].cycle = cycle_read_zp;
-  for (int i = 0; i < (int)(sizeof(abs_list)); i++)
-    opcodes[abs_list[i]].cycle = cycle_read_absolute;
-  for (int i = 0; i < (int)(sizeof(zpx_list)); i++)
-    opcodes[zpx_list[i]].cycle = cycle_read_zpx;
-  for (int i = 0; i < (int)(sizeof(absx_list)); i++)
-    opcodes[absx_list[i]].cycle = cycle_read_absx;
+  assign_defs(ldy, sizeof(ldy) / sizeof(ldy[0]));
 
-  // Phase 3 Step 7: Write Zero Page + Absolute (3/4 cycles).
-  static const uint8_t write_zp_list[] = {
-    0x85,
-    0x86,
-    0x84, // STA, STX, STY zp
-    0x87, // SAX zp (illegal)
+  static const opcode_def_t sta[] = {
+    { 0x85, "STA", 2, 3, false, addr_zero_page, op_STA, cycle_write_zp },
+    { 0x95, "STA", 2, 4, false, addr_zero_page_x, op_STA, cycle_write_zpx },
+    { 0x8D, "STA", 3, 4, false, addr_absolute, op_STA, cycle_write_absolute },
+    { 0x9D, "STA", 3, 5, false, addr_absolute_x, op_STA, cycle_write_absx },
+    { 0x99, "STA", 3, 5, false, addr_absolute_y, op_STA, cycle_write_absy },
+    { 0x81, "STA", 2, 6, false, addr_indexed_indirect, op_STA, cycle_write_idrx },
+    { 0x91, "STA", 2, 6, false, addr_indirect_indexed, op_STA, cycle_write_idry },
   };
-  static const uint8_t write_abs_list[] = {
-    0x8D,
-    0x8E,
-    0x8C, // STA, STX, STY abs
-    0x8F, // SAX abs (illegal)
+  assign_defs(sta, sizeof(sta) / sizeof(sta[0]));
+
+  static const opcode_def_t stx[] = {
+    { 0x86, "STX", 2, 3, false, addr_zero_page, op_STX, cycle_write_zp },
+    { 0x96, "STX", 2, 4, false, addr_zero_page_y, op_STX, cycle_write_zpx },
+    { 0x8E, "STX", 3, 4, false, addr_absolute, op_STX, cycle_write_absolute },
   };
-  for (int i = 0; i < (int)(sizeof(write_zp_list)); i++)
-    opcodes[write_zp_list[i]].cycle = cycle_write_zp;
-  for (int i = 0; i < (int)(sizeof(write_abs_list)); i++)
-    opcodes[write_abs_list[i]].cycle = cycle_write_absolute;
+  assign_defs(stx, sizeof(stx) / sizeof(stx[0]));
 
-  // Phase 3 Step 8: Branch (2/3/4 cycles).
-  static const uint8_t branch_list[] = {
-    0x90, 0xB0, 0xF0, 0xD0, // BCC, BCS, BEQ, BNE
-    0x30, 0x10, 0x50, 0x70, // BMI, BPL, BVC, BVS
+  static const opcode_def_t sty[] = {
+    { 0x84, "STY", 2, 3, false, addr_zero_page, op_STY, cycle_write_zp },
+    { 0x94, "STY", 2, 4, false, addr_zero_page_x, op_STY, cycle_write_zpx },
+    { 0x8C, "STY", 3, 4, false, addr_absolute, op_STY, cycle_write_absolute },
   };
-  for (int i = 0; i < (int)(sizeof(branch_list)); i++)
-    opcodes[branch_list[i]].cycle = cycle_branch;
+  assign_defs(sty, sizeof(sty) / sizeof(sty[0]));
 
-  // Phase 3 Step 9: JMP, JSR, RTS, RTI.
-  opcodes[0x4C].cycle = cycle_jmp_abs; // JMP abs
-  opcodes[0x6C].cycle = cycle_jmp_ind; // JMP ind
-  opcodes[0x20].cycle = cycle_jsr;
-  opcodes[0x60].cycle = cycle_rts;
-  opcodes[0x40].cycle = cycle_rti;
-  opcodes[0x00].cycle = cycle_brk; // BRK
-
-  // Phase 3 Step 10: RMW Zero Page + Absolute (5/6 cycles).
-  static const uint8_t rmw_zp_list[] = {
-    0x06, 0x46, 0x26, 0x66,             // ASL, LSR, ROL, ROR zp
-    0xE6, 0xC6,                         // INC, DEC zp
-    0x07, 0x27, 0x47, 0x67, 0xC7, 0xE7, // SLO, RLA, SRE, RRA, DCP, ISB zp (illegal)
+  static const opcode_def_t adc[] = {
+    { 0x69, "ADC", 2, 2, false, addr_immediate, op_ADC, cycle_read_immediate },
+    { 0x65, "ADC", 2, 3, false, addr_zero_page, op_ADC, cycle_read_zp },
+    { 0x75, "ADC", 2, 4, false, addr_zero_page_x, op_ADC, cycle_read_zpx },
+    { 0x6D, "ADC", 3, 4, false, addr_absolute, op_ADC, cycle_read_absolute },
+    { 0x7D, "ADC", 3, 4, true, addr_absolute_x, op_ADC, cycle_read_absx },
+    { 0x79, "ADC", 3, 4, true, addr_absolute_y, op_ADC, cycle_read_absy },
+    { 0x61, "ADC", 2, 6, false, addr_indexed_indirect, op_ADC, cycle_read_idrx },
+    { 0x71, "ADC", 2, 5, true, addr_indirect_indexed, op_ADC, cycle_read_idry },
   };
-  static const uint8_t rmw_abs_list[] = {
-    0x0E, 0x4E, 0x2E, 0x6E,             // ASL, LSR, ROL, ROR abs
-    0xEE, 0xCE,                         // INC, DEC abs
-    0x0F, 0x2F, 0x4F, 0x6F, 0xCF, 0xEF, // SLO, RLA, SRE, RRA, DCP, ISB abs (illegal)
+  assign_defs(adc, sizeof(adc) / sizeof(adc[0]));
+
+  static const opcode_def_t sbc[] = {
+    { 0xE9, "SBC", 2, 2, false, addr_immediate, op_SBC, cycle_read_immediate },
+    { 0xE5, "SBC", 2, 3, false, addr_zero_page, op_SBC, cycle_read_zp },
+    { 0xF5, "SBC", 2, 4, false, addr_zero_page_x, op_SBC, cycle_read_zpx },
+    { 0xED, "SBC", 3, 4, false, addr_absolute, op_SBC, cycle_read_absolute },
+    { 0xFD, "SBC", 3, 4, true, addr_absolute_x, op_SBC, cycle_read_absx },
+    { 0xF9, "SBC", 3, 4, true, addr_absolute_y, op_SBC, cycle_read_absy },
+    { 0xE1, "SBC", 2, 6, false, addr_indexed_indirect, op_SBC, cycle_read_idrx },
+    { 0xF1, "SBC", 2, 5, true, addr_indirect_indexed, op_SBC, cycle_read_idry },
   };
-  for (int i = 0; i < (int)(sizeof(rmw_zp_list)); i++)
-    opcodes[rmw_zp_list[i]].cycle = cycle_rmw_zp;
-  for (int i = 0; i < (int)(sizeof(rmw_abs_list)); i++)
-    opcodes[rmw_abs_list[i]].cycle = cycle_rmw_abs;
+  assign_defs(sbc, sizeof(sbc) / sizeof(sbc[0]));
+  opcodes[0xEB] = opcodes[0xE9]; // undocumented SBC alias
 
-  // Phase 3 Step 11: Stack push/pull.
-  opcodes[0x48].cycle = cycle_push; // PHA
-  opcodes[0x08].cycle = cycle_push; // PHP
-  opcodes[0x68].cycle = cycle_pull; // PLA
-  opcodes[0x28].cycle = cycle_pull; // PLP
+  static const opcode_def_t and_op[] = {
+    { 0x29, "AND", 2, 2, false, addr_immediate, op_AND, cycle_read_immediate },
+    { 0x25, "AND", 2, 3, false, addr_zero_page, op_AND, cycle_read_zp },
+    { 0x35, "AND", 2, 4, false, addr_zero_page_x, op_AND, cycle_read_zpx },
+    { 0x2D, "AND", 3, 4, false, addr_absolute, op_AND, cycle_read_absolute },
+    { 0x3D, "AND", 3, 4, true, addr_absolute_x, op_AND, cycle_read_absx },
+    { 0x39, "AND", 3, 4, true, addr_absolute_y, op_AND, cycle_read_absy },
+    { 0x21, "AND", 2, 6, false, addr_indexed_indirect, op_AND, cycle_read_idrx },
+    { 0x31, "AND", 2, 5, true, addr_indirect_indexed, op_AND, cycle_read_idry },
+  };
+  assign_defs(and_op, sizeof(and_op) / sizeof(and_op[0]));
 
-  // Phase 3 Step 12: BRK (handled by fetch_opcode as interrupt).
-  // Phase 3 Step 13: Write indexed/indirect and remaining indexed reads.
-  static const uint8_t write_zpx_list[] = { 0x95, 0x94, 0x96, 0x97 };
-  static const uint8_t write_absx_list[] = { 0x9D };
-  static const uint8_t write_absy_list[] = { 0x99 };
-  static const uint8_t write_idrx_list[] = { 0x81, 0x83 };
-  static const uint8_t write_idry_list[] = { 0x91 };
-  static const uint8_t read_absy_list[] = { 0xB9, 0xBF, 0x39, 0x19, 0x59, 0x79, 0xF9, 0xD9, 0xBE };
-  static const uint8_t read_idrx_list[] = { 0xA1, 0xA3, 0x21, 0x01, 0x41, 0x61, 0xE1, 0xC1 };
-  static const uint8_t read_idry_list[] = { 0xB1, 0xB3, 0x31, 0x11, 0x51, 0x71, 0xF1, 0xD1 };
-  static const uint8_t rmw_zpx_list[] = { 0x16, 0x56, 0x36, 0x76, 0xF6, 0xD6,
-                                          0x17, 0x57, 0x37, 0x77, 0xD7, 0xF7 };
-  static const uint8_t rmw_absx_list[] = { 0x1E, 0x5E, 0x3E, 0x7E, 0xFE, 0xDE,
-                                           0x1F, 0x5F, 0x3F, 0x7F, 0xDF, 0xFF };
-  static const uint8_t rmw_absy_list[] = { 0x1B, 0x5B, 0x3B, 0x7B, 0xDB, 0xFB };
-  static const uint8_t rmw_idrx_list[] = { 0x03, 0x43, 0x23, 0x63, 0xC3, 0xE3 };
-  static const uint8_t rmw_idry_list[] = { 0x13, 0x53, 0x33, 0x73, 0xD3, 0xF3 };
-  // NOP abs,X variants (harmless reads)
-  static const uint8_t nop_absx_list[] = { 0x1C, 0x3C, 0x5C, 0x7C, 0xDC, 0xFC };
-  // Remaining LAX variants (illegal reads)
-  static const uint8_t lax_list[] = { 0xB7 };
+  static const opcode_def_t ora[] = {
+    { 0x09, "ORA", 2, 2, false, addr_immediate, op_ORA, cycle_read_immediate },
+    { 0x05, "ORA", 2, 3, false, addr_zero_page, op_ORA, cycle_read_zp },
+    { 0x15, "ORA", 2, 4, false, addr_zero_page_x, op_ORA, cycle_read_zpx },
+    { 0x0D, "ORA", 3, 4, false, addr_absolute, op_ORA, cycle_read_absolute },
+    { 0x1D, "ORA", 3, 4, true, addr_absolute_x, op_ORA, cycle_read_absx },
+    { 0x19, "ORA", 3, 4, true, addr_absolute_y, op_ORA, cycle_read_absy },
+    { 0x01, "ORA", 2, 6, false, addr_indexed_indirect, op_ORA, cycle_read_idrx },
+    { 0x11, "ORA", 2, 5, true, addr_indirect_indexed, op_ORA, cycle_read_idry },
+  };
+  assign_defs(ora, sizeof(ora) / sizeof(ora[0]));
 
-  for (int i = 0; i < (int)(sizeof(write_zpx_list)); i++)
-    opcodes[write_zpx_list[i]].cycle = cycle_write_zpx;
-  for (int i = 0; i < (int)(sizeof(write_absx_list)); i++)
-    opcodes[write_absx_list[i]].cycle = cycle_write_absx;
-  for (int i = 0; i < (int)(sizeof(write_absy_list)); i++)
-    opcodes[write_absy_list[i]].cycle = cycle_write_absy;
-  for (int i = 0; i < (int)(sizeof(write_idrx_list)); i++)
-    opcodes[write_idrx_list[i]].cycle = cycle_write_idrx;
-  for (int i = 0; i < (int)(sizeof(write_idry_list)); i++)
-    opcodes[write_idry_list[i]].cycle = cycle_write_idry;
-  for (int i = 0; i < (int)(sizeof(read_absy_list)); i++)
-    opcodes[read_absy_list[i]].cycle = cycle_read_absy;
-  for (int i = 0; i < (int)(sizeof(read_idrx_list)); i++)
-    opcodes[read_idrx_list[i]].cycle = cycle_read_idrx;
-  for (int i = 0; i < (int)(sizeof(read_idry_list)); i++)
-    opcodes[read_idry_list[i]].cycle = cycle_read_idry;
-  for (int i = 0; i < (int)(sizeof(rmw_zpx_list)); i++)
-    opcodes[rmw_zpx_list[i]].cycle = cycle_rmw_zpx;
-  for (int i = 0; i < (int)(sizeof(rmw_absx_list)); i++)
-    opcodes[rmw_absx_list[i]].cycle = cycle_rmw_absx;
-  for (int i = 0; i < (int)(sizeof(rmw_absy_list)); i++)
-    opcodes[rmw_absy_list[i]].cycle = cycle_rmw_absy;
-  for (int i = 0; i < (int)(sizeof(rmw_idrx_list)); i++)
-    opcodes[rmw_idrx_list[i]].cycle = cycle_rmw_idrx;
-  for (int i = 0; i < (int)(sizeof(rmw_idry_list)); i++)
-    opcodes[rmw_idry_list[i]].cycle = cycle_rmw_idry;
-  for (int i = 0; i < (int)(sizeof(nop_absx_list)); i++)
-    opcodes[nop_absx_list[i]].cycle = cycle_read_absx;
-  for (int i = 0; i < (int)(sizeof(lax_list)); i++)
-    opcodes[lax_list[i]].cycle = cycle_read_zpx; // LAX zp,Y uses zp,X-like timing
+  static const opcode_def_t eor[] = {
+    { 0x49, "EOR", 2, 2, false, addr_immediate, op_EOR, cycle_read_immediate },
+    { 0x45, "EOR", 2, 3, false, addr_zero_page, op_EOR, cycle_read_zp },
+    { 0x55, "EOR", 2, 4, false, addr_zero_page_x, op_EOR, cycle_read_zpx },
+    { 0x4D, "EOR", 3, 4, false, addr_absolute, op_EOR, cycle_read_absolute },
+    { 0x5D, "EOR", 3, 4, true, addr_absolute_x, op_EOR, cycle_read_absx },
+    { 0x59, "EOR", 3, 4, true, addr_absolute_y, op_EOR, cycle_read_absy },
+    { 0x41, "EOR", 2, 6, false, addr_indexed_indirect, op_EOR, cycle_read_idrx },
+    { 0x51, "EOR", 2, 5, true, addr_indirect_indexed, op_EOR, cycle_read_idry },
+  };
+  assign_defs(eor, sizeof(eor) / sizeof(eor[0]));
+
+  static const opcode_def_t cmp[] = {
+    { 0xC9, "CMP", 2, 2, false, addr_immediate, op_CMP, cycle_read_immediate },
+    { 0xC5, "CMP", 2, 3, false, addr_zero_page, op_CMP, cycle_read_zp },
+    { 0xD5, "CMP", 2, 4, false, addr_zero_page_x, op_CMP, cycle_read_zpx },
+    { 0xCD, "CMP", 3, 4, false, addr_absolute, op_CMP, cycle_read_absolute },
+    { 0xDD, "CMP", 3, 4, true, addr_absolute_x, op_CMP, cycle_read_absx },
+    { 0xD9, "CMP", 3, 4, true, addr_absolute_y, op_CMP, cycle_read_absy },
+    { 0xC1, "CMP", 2, 6, false, addr_indexed_indirect, op_CMP, cycle_read_idrx },
+    { 0xD1, "CMP", 2, 5, true, addr_indirect_indexed, op_CMP, cycle_read_idry },
+  };
+  assign_defs(cmp, sizeof(cmp) / sizeof(cmp[0]));
+
+  static const opcode_def_t cpx[] = {
+    { 0xE0, "CPX", 2, 2, false, addr_immediate, op_CPX, cycle_read_immediate },
+    { 0xE4, "CPX", 2, 3, false, addr_zero_page, op_CPX, cycle_read_zp },
+    { 0xEC, "CPX", 3, 4, false, addr_absolute, op_CPX, cycle_read_absolute },
+  };
+  assign_defs(cpx, sizeof(cpx) / sizeof(cpx[0]));
+
+  static const opcode_def_t cpy[] = {
+    { 0xC0, "CPY", 2, 2, false, addr_immediate, op_CPY, cycle_read_immediate },
+    { 0xC4, "CPY", 2, 3, false, addr_zero_page, op_CPY, cycle_read_zp },
+    { 0xCC, "CPY", 3, 4, false, addr_absolute, op_CPY, cycle_read_absolute },
+  };
+  assign_defs(cpy, sizeof(cpy) / sizeof(cpy[0]));
+
+  static const opcode_def_t bit_op[] = {
+    { 0x24, "BIT", 2, 3, false, addr_zero_page, op_BIT, cycle_read_zp },
+    { 0x2C, "BIT", 3, 4, false, addr_absolute, op_BIT, cycle_read_absolute },
+  };
+  assign_defs(bit_op, sizeof(bit_op) / sizeof(bit_op[0]));
+
+  // Shift / rotate / increment / decrement — all read-modify-write.
+  static const opcode_def_t asl[] = {
+    { 0x0A, "ASL", 1, 2, false, addr_accumulator, op_ASL, cycle_implied },
+    { 0x06, "ASL", 2, 5, false, addr_zero_page, op_ASL, cycle_rmw_zp },
+    { 0x16, "ASL", 2, 6, false, addr_zero_page_x, op_ASL, cycle_rmw_zpx },
+    { 0x0E, "ASL", 3, 6, false, addr_absolute, op_ASL, cycle_rmw_abs },
+    { 0x1E, "ASL", 3, 7, false, addr_absolute_x, op_ASL, cycle_rmw_absx },
+  };
+  assign_defs(asl, sizeof(asl) / sizeof(asl[0]));
+
+  static const opcode_def_t lsr[] = {
+    { 0x4A, "LSR", 1, 2, false, addr_accumulator, op_LSR, cycle_implied },
+    { 0x46, "LSR", 2, 5, false, addr_zero_page, op_LSR, cycle_rmw_zp },
+    { 0x56, "LSR", 2, 6, false, addr_zero_page_x, op_LSR, cycle_rmw_zpx },
+    { 0x4E, "LSR", 3, 6, false, addr_absolute, op_LSR, cycle_rmw_abs },
+    { 0x5E, "LSR", 3, 7, false, addr_absolute_x, op_LSR, cycle_rmw_absx },
+  };
+  assign_defs(lsr, sizeof(lsr) / sizeof(lsr[0]));
+
+  static const opcode_def_t rol[] = {
+    { 0x2A, "ROL", 1, 2, false, addr_accumulator, op_ROL, cycle_implied },
+    { 0x26, "ROL", 2, 5, false, addr_zero_page, op_ROL, cycle_rmw_zp },
+    { 0x36, "ROL", 2, 6, false, addr_zero_page_x, op_ROL, cycle_rmw_zpx },
+    { 0x2E, "ROL", 3, 6, false, addr_absolute, op_ROL, cycle_rmw_abs },
+    { 0x3E, "ROL", 3, 7, false, addr_absolute_x, op_ROL, cycle_rmw_absx },
+  };
+  assign_defs(rol, sizeof(rol) / sizeof(rol[0]));
+
+  static const opcode_def_t ror[] = {
+    { 0x6A, "ROR", 1, 2, false, addr_accumulator, op_ROR, cycle_implied },
+    { 0x66, "ROR", 2, 5, false, addr_zero_page, op_ROR, cycle_rmw_zp },
+    { 0x76, "ROR", 2, 6, false, addr_zero_page_x, op_ROR, cycle_rmw_zpx },
+    { 0x6E, "ROR", 3, 6, false, addr_absolute, op_ROR, cycle_rmw_abs },
+    { 0x7E, "ROR", 3, 7, false, addr_absolute_x, op_ROR, cycle_rmw_absx },
+  };
+  assign_defs(ror, sizeof(ror) / sizeof(ror[0]));
+
+  static const opcode_def_t inc[] = {
+    { 0xE6, "INC", 2, 5, false, addr_zero_page, op_INC, cycle_rmw_zp },
+    { 0xF6, "INC", 2, 6, false, addr_zero_page_x, op_INC, cycle_rmw_zpx },
+    { 0xEE, "INC", 3, 6, false, addr_absolute, op_INC, cycle_rmw_abs },
+    { 0xFE, "INC", 3, 7, false, addr_absolute_x, op_INC, cycle_rmw_absx },
+  };
+  assign_defs(inc, sizeof(inc) / sizeof(inc[0]));
+
+  static const opcode_def_t dec[] = {
+    { 0xC6, "DEC", 2, 5, false, addr_zero_page, op_DEC, cycle_rmw_zp },
+    { 0xD6, "DEC", 2, 6, false, addr_zero_page_x, op_DEC, cycle_rmw_zpx },
+    { 0xCE, "DEC", 3, 6, false, addr_absolute, op_DEC, cycle_rmw_abs },
+    { 0xDE, "DEC", 3, 7, false, addr_absolute_x, op_DEC, cycle_rmw_absx },
+  };
+  assign_defs(dec, sizeof(dec) / sizeof(dec[0]));
+
+  // Implied / register: all 1 byte, 2 cycles, no operand.
+  static const opcode_def_t implied_ops[] = {
+    { 0xAA, "TAX", 1, 2, false, addr_implied, op_TAX, cycle_implied },
+    { 0x8A, "TXA", 1, 2, false, addr_implied, op_TXA, cycle_implied },
+    { 0xA8, "TAY", 1, 2, false, addr_implied, op_TAY, cycle_implied },
+    { 0x98, "TYA", 1, 2, false, addr_implied, op_TYA, cycle_implied },
+    { 0xBA, "TSX", 1, 2, false, addr_implied, op_TSX, cycle_implied },
+    { 0x9A, "TXS", 1, 2, false, addr_implied, op_TXS, cycle_implied },
+    { 0xE8, "INX", 1, 2, false, addr_implied, op_INX, cycle_implied },
+    { 0xC8, "INY", 1, 2, false, addr_implied, op_INY, cycle_implied },
+    { 0xCA, "DEX", 1, 2, false, addr_implied, op_DEX, cycle_implied },
+    { 0x88, "DEY", 1, 2, false, addr_implied, op_DEY, cycle_implied },
+    { 0x18, "CLC", 1, 2, false, addr_implied, op_CLC, cycle_implied },
+    { 0x38, "SEC", 1, 2, false, addr_implied, op_SEC, cycle_implied },
+    { 0x58, "CLI", 1, 2, false, addr_implied, op_CLI, cycle_implied },
+    { 0x78, "SEI", 1, 2, false, addr_implied, op_SEI, cycle_implied },
+    { 0xB8, "CLV", 1, 2, false, addr_implied, op_CLV, cycle_implied },
+    { 0xD8, "CLD", 1, 2, false, addr_implied, op_CLD, cycle_implied },
+    { 0xF8, "SED", 1, 2, false, addr_implied, op_SED, cycle_implied },
+    { 0xEA, "NOP", 1, 2, false, addr_implied, op_NOP, cycle_implied },
+    { 0x1A, "NOP", 1, 2, false, addr_implied, op_NOP, cycle_implied },
+    { 0x3A, "NOP", 1, 2, false, addr_implied, op_NOP, cycle_implied },
+    { 0x5A, "NOP", 1, 2, false, addr_implied, op_NOP, cycle_implied },
+    { 0x7A, "NOP", 1, 2, false, addr_implied, op_NOP, cycle_implied },
+    { 0xDA, "NOP", 1, 2, false, addr_implied, op_NOP, cycle_implied },
+    { 0xFA, "NOP", 1, 2, false, addr_implied, op_NOP, cycle_implied },
+  };
+  assign_defs(implied_ops, sizeof(implied_ops) / sizeof(implied_ops[0]));
+
+  // Stack operations.
+  static const opcode_def_t stack_ops[] = {
+    { 0x48, "PHA", 1, 3, false, addr_implied, op_PHA, cycle_push },
+    { 0x08, "PHP", 1, 3, false, addr_implied, op_PHP, cycle_push },
+    { 0x68, "PLA", 1, 4, false, addr_implied, op_PLA, cycle_pull },
+    { 0x28, "PLP", 1, 4, false, addr_implied, op_PLP, cycle_pull },
+  };
+  assign_defs(stack_ops, sizeof(stack_ops) / sizeof(stack_ops[0]));
+
+  // Control transfer.
+  static const opcode_def_t jumps[] = {
+    { 0x4C, "JMP", 3, 3, false, addr_absolute, op_JMP, cycle_jmp_abs },
+    { 0x6C, "JMP", 3, 5, false, addr_indirect, op_JMP, cycle_jmp_ind },
+    { 0x20, "JSR", 3, 6, false, addr_absolute, op_JSR, cycle_jsr },
+    { 0x60, "RTS", 1, 6, false, addr_implied, op_RTS, cycle_rts },
+    { 0x40, "RTI", 1, 6, false, addr_implied, op_RTI, cycle_rti },
+    { 0x00, "BRK", 2, 7, false, addr_implied, op_BRK, cycle_brk },
+  };
+  assign_defs(jumps, sizeof(jumps) / sizeof(jumps[0]));
+
+  // Branches: all 2 bytes, page_penalty = true.
+  static const opcode_def_t branches[] = {
+    { 0x90, "BCC", 2, 2, true, addr_relative, op_BCC, cycle_branch },
+    { 0xB0, "BCS", 2, 2, true, addr_relative, op_BCS, cycle_branch },
+    { 0xF0, "BEQ", 2, 2, true, addr_relative, op_BEQ, cycle_branch },
+    { 0xD0, "BNE", 2, 2, true, addr_relative, op_BNE, cycle_branch },
+    { 0x30, "BMI", 2, 2, true, addr_relative, op_BMI, cycle_branch },
+    { 0x10, "BPL", 2, 2, true, addr_relative, op_BPL, cycle_branch },
+    { 0x50, "BVC", 2, 2, true, addr_relative, op_BVC, cycle_branch },
+    { 0x70, "BVS", 2, 2, true, addr_relative, op_BVS, cycle_branch },
+  };
+  assign_defs(branches, sizeof(branches) / sizeof(branches[0]));
+
+  // NOP immediate: 2-byte NOPs that read and discard an operand byte.
+  static const opcode_def_t nop_imm[] = {
+    { 0x80, "NOP", 2, 2, false, addr_immediate, op_NOP, cycle_read_immediate },
+    { 0x82, "NOP", 2, 2, false, addr_immediate, op_NOP, cycle_read_immediate },
+    { 0x89, "NOP", 2, 2, false, addr_immediate, op_NOP, cycle_read_immediate },
+    { 0xC2, "NOP", 2, 2, false, addr_immediate, op_NOP, cycle_read_immediate },
+    { 0xE2, "NOP", 2, 2, false, addr_immediate, op_NOP, cycle_read_immediate },
+    { 0x04, "NOP", 2, 3, false, addr_zero_page, op_NOP, cycle_read_zp },
+    { 0x44, "NOP", 2, 3, false, addr_zero_page, op_NOP, cycle_read_zp },
+    { 0x64, "NOP", 2, 3, false, addr_zero_page, op_NOP, cycle_read_zp },
+    { 0x14, "NOP", 2, 4, false, addr_zero_page_x, op_NOP, cycle_read_zpx },
+    { 0x34, "NOP", 2, 4, false, addr_zero_page_x, op_NOP, cycle_read_zpx },
+    { 0x54, "NOP", 2, 4, false, addr_zero_page_x, op_NOP, cycle_read_zpx },
+    { 0x74, "NOP", 2, 4, false, addr_zero_page_x, op_NOP, cycle_read_zpx },
+    { 0xD4, "NOP", 2, 4, false, addr_zero_page_x, op_NOP, cycle_read_zpx },
+    { 0xF4, "NOP", 2, 4, false, addr_zero_page_x, op_NOP, cycle_read_zpx },
+    { 0x0C, "NOP", 3, 4, false, addr_absolute, op_NOP, cycle_read_absolute },
+    { 0x1C, "NOP", 3, 4, true, addr_absolute_x, op_NOP, cycle_read_absx },
+    { 0x3C, "NOP", 3, 4, true, addr_absolute_x, op_NOP, cycle_read_absx },
+    { 0x5C, "NOP", 3, 4, true, addr_absolute_x, op_NOP, cycle_read_absx },
+    { 0x7C, "NOP", 3, 4, true, addr_absolute_x, op_NOP, cycle_read_absx },
+    { 0xDC, "NOP", 3, 4, true, addr_absolute_x, op_NOP, cycle_read_absx },
+    { 0xFC, "NOP", 3, 4, true, addr_absolute_x, op_NOP, cycle_read_absx },
+  };
+  assign_defs(nop_imm, sizeof(nop_imm) / sizeof(nop_imm[0]));
+
+  // Illegal / undocumented opcodes used by games and nestest.
+  static const opcode_def_t illegal_ops[] = {
+    { 0xA7, "LAX", 2, 3, false, addr_zero_page, op_LAX, cycle_read_zp },
+    { 0xB7, "LAX", 2, 4, false, addr_zero_page_y, op_LAX, cycle_read_zpx },
+    { 0xAF, "LAX", 3, 4, false, addr_absolute, op_LAX, cycle_read_absolute },
+    { 0xBF, "LAX", 3, 4, true, addr_absolute_y, op_LAX, cycle_read_absy },
+    { 0xA3, "LAX", 2, 6, false, addr_indexed_indirect, op_LAX, cycle_read_idrx },
+    { 0xB3, "LAX", 2, 5, true, addr_indirect_indexed, op_LAX, cycle_read_idry },
+    { 0x87, "SAX", 2, 3, false, addr_zero_page, op_SAX, cycle_write_zp },
+    { 0x97, "SAX", 2, 4, false, addr_zero_page_y, op_SAX, cycle_write_zpx },
+    { 0x8F, "SAX", 3, 4, false, addr_absolute, op_SAX, cycle_write_absolute },
+    { 0x83, "SAX", 2, 6, false, addr_indexed_indirect, op_SAX, cycle_write_idrx },
+    { 0xC7, "DCP", 2, 5, false, addr_zero_page, op_DCP, cycle_rmw_zp },
+    { 0xD7, "DCP", 2, 6, false, addr_zero_page_x, op_DCP, cycle_rmw_zpx },
+    { 0xCF, "DCP", 3, 6, false, addr_absolute, op_DCP, cycle_rmw_abs },
+    { 0xDF, "DCP", 3, 7, false, addr_absolute_x, op_DCP, cycle_rmw_absx },
+    { 0xDB, "DCP", 3, 7, false, addr_absolute_y, op_DCP, cycle_rmw_absy },
+    { 0xC3, "DCP", 2, 8, false, addr_indexed_indirect, op_DCP, cycle_rmw_idrx },
+    { 0xD3, "DCP", 2, 8, false, addr_indirect_indexed, op_DCP, cycle_rmw_idry },
+    { 0xE7, "ISB", 2, 5, false, addr_zero_page, op_ISB, cycle_rmw_zp },
+    { 0xF7, "ISB", 2, 6, false, addr_zero_page_x, op_ISB, cycle_rmw_zpx },
+    { 0xEF, "ISB", 3, 6, false, addr_absolute, op_ISB, cycle_rmw_abs },
+    { 0xFF, "ISB", 3, 7, false, addr_absolute_x, op_ISB, cycle_rmw_absx },
+    { 0xFB, "ISB", 3, 7, false, addr_absolute_y, op_ISB, cycle_rmw_absy },
+    { 0xE3, "ISB", 2, 8, false, addr_indexed_indirect, op_ISB, cycle_rmw_idrx },
+    { 0xF3, "ISB", 2, 8, false, addr_indirect_indexed, op_ISB, cycle_rmw_idry },
+    { 0x07, "SLO", 2, 5, false, addr_zero_page, op_SLO, cycle_rmw_zp },
+    { 0x17, "SLO", 2, 6, false, addr_zero_page_x, op_SLO, cycle_rmw_zpx },
+    { 0x0F, "SLO", 3, 6, false, addr_absolute, op_SLO, cycle_rmw_abs },
+    { 0x1F, "SLO", 3, 7, false, addr_absolute_x, op_SLO, cycle_rmw_absx },
+    { 0x1B, "SLO", 3, 7, false, addr_absolute_y, op_SLO, cycle_rmw_absy },
+    { 0x03, "SLO", 2, 8, false, addr_indexed_indirect, op_SLO, cycle_rmw_idrx },
+    { 0x13, "SLO", 2, 8, false, addr_indirect_indexed, op_SLO, cycle_rmw_idry },
+    { 0x27, "RLA", 2, 5, false, addr_zero_page, op_RLA, cycle_rmw_zp },
+    { 0x37, "RLA", 2, 6, false, addr_zero_page_x, op_RLA, cycle_rmw_zpx },
+    { 0x2F, "RLA", 3, 6, false, addr_absolute, op_RLA, cycle_rmw_abs },
+    { 0x3F, "RLA", 3, 7, false, addr_absolute_x, op_RLA, cycle_rmw_absx },
+    { 0x3B, "RLA", 3, 7, false, addr_absolute_y, op_RLA, cycle_rmw_absy },
+    { 0x23, "RLA", 2, 8, false, addr_indexed_indirect, op_RLA, cycle_rmw_idrx },
+    { 0x33, "RLA", 2, 8, false, addr_indirect_indexed, op_RLA, cycle_rmw_idry },
+    { 0x47, "SRE", 2, 5, false, addr_zero_page, op_SRE, cycle_rmw_zp },
+    { 0x57, "SRE", 2, 6, false, addr_zero_page_x, op_SRE, cycle_rmw_zpx },
+    { 0x4F, "SRE", 3, 6, false, addr_absolute, op_SRE, cycle_rmw_abs },
+    { 0x5F, "SRE", 3, 7, false, addr_absolute_x, op_SRE, cycle_rmw_absx },
+    { 0x5B, "SRE", 3, 7, false, addr_absolute_y, op_SRE, cycle_rmw_absy },
+    { 0x43, "SRE", 2, 8, false, addr_indexed_indirect, op_SRE, cycle_rmw_idrx },
+    { 0x53, "SRE", 2, 8, false, addr_indirect_indexed, op_SRE, cycle_rmw_idry },
+    { 0x67, "RRA", 2, 5, false, addr_zero_page, op_RRA, cycle_rmw_zp },
+    { 0x77, "RRA", 2, 6, false, addr_zero_page_x, op_RRA, cycle_rmw_zpx },
+    { 0x6F, "RRA", 3, 6, false, addr_absolute, op_RRA, cycle_rmw_abs },
+    { 0x7F, "RRA", 3, 7, false, addr_absolute_x, op_RRA, cycle_rmw_absx },
+    { 0x7B, "RRA", 3, 7, false, addr_absolute_y, op_RRA, cycle_rmw_absy },
+    { 0x63, "RRA", 2, 8, false, addr_indexed_indirect, op_RRA, cycle_rmw_idrx },
+    { 0x73, "RRA", 2, 8, false, addr_indirect_indexed, op_RRA, cycle_rmw_idry },
+    { 0x0B, "ANC", 2, 2, false, addr_immediate, op_ANC, cycle_read_immediate },
+    { 0x2B, "ANC", 2, 2, false, addr_immediate, op_ANC, cycle_read_immediate },
+    { 0x4B, "ALR", 2, 2, false, addr_immediate, op_ALR, cycle_read_immediate },
+    { 0x6B, "ARR", 2, 2, false, addr_immediate, op_ARR, cycle_read_immediate },
+    { 0xAB, "LXA", 2, 2, false, addr_immediate, op_LXA, cycle_read_immediate },
+    { 0xCB, "SBX", 2, 2, false, addr_immediate, op_SBX, cycle_read_immediate },
+    // SHY/SHX: undocumented stores with address-bus AND effect
+    { 0x9C, "SHY", 3, 5, false, addr_absolute_x, op_SHY, cycle_write_absx },
+    { 0x9E, "SHX", 3, 5, false, addr_absolute_y, op_SHX, cycle_write_absy },
+  };
+  assign_defs(illegal_ops, sizeof(illegal_ops) / sizeof(illegal_ops[0]));
 }
 
 static void push_interrupt(sb_6502_t* cpu, sb_bus_t* bus, uint16_t vector) {
@@ -1147,6 +1061,7 @@ static void push_interrupt(sb_6502_t* cpu, sb_bus_t* bus, uint16_t vector) {
   cpu->cycles += 7;
 }
 
+// DEPRECATED: legacy batch execution. Use sb_6502_cycle for cycle-interleaved mode.
 void sb_6502_step(sb_6502_t* cpu, sb_bus_t* bus) {
   // Handle interrupts
   if (cpu->nmi_pending) {
@@ -1648,9 +1563,11 @@ static int cycle_rti(sb_6502_t* cpu, sb_bus_t* bus) {
     break;
   case 2:
     cpu->s++;
+    cpu->i_flag_saved = cpu->p & SB_6502_INTERRUPT; // save old I
     cpu->p = sb_bus_read(bus, 0x0100 | cpu->s);
     cpu->p &= ~SB_6502_BRK;
     cpu->p |= SB_6502_UNUSED;
+    cpu->irq_delay_next = true; // I flag might have changed
     rc = SB_IN_PROGRESS;
     break;
   case 3:
@@ -1775,9 +1692,12 @@ static int cycle_pull(sb_6502_t* cpu, sb_bus_t* bus) {
       cpu->a = sb_bus_read(bus, 0x0100 | cpu->s);
       SET_ZN(cpu, cpu->a);
     } else { // PLP
-      cpu->p = sb_bus_read(bus, 0x0100 | cpu->s);
+      uint8_t new_p = sb_bus_read(bus, 0x0100 | cpu->s);
+      cpu->i_flag_saved = cpu->p & SB_6502_INTERRUPT; // save old I
+      cpu->p = new_p;
       cpu->p &= ~SB_6502_BRK;
       cpu->p |= SB_6502_UNUSED;
+      cpu->irq_delay_next = true; // I flag might have changed
     }
     rc = SB_OK;
     break;
@@ -2409,7 +2329,17 @@ static int fetch_opcode(sb_6502_t* cpu, sb_bus_t* bus) {
   }
 
   // IRQ only fires if the interrupt disable flag is clear.
-  if (cpu->irq_pending && !(cpu->p & SB_6502_INTERRUPT)) {
+  // 6502 one-instruction delay: if the I flag was just changed, the next
+  // fetch uses the SAVED I flag value (before the change).
+  bool check_i;
+  if (cpu->irq_delay_next) {
+    check_i = cpu->i_flag_saved; // use I flag from BEFORE the change
+    cpu->irq_delay_next = false; // only applies to this one fetch
+  } else {
+    check_i = cpu->p & SB_6502_INTERRUPT; // use current I flag
+  }
+
+  if (cpu->irq_pending && !check_i) {
     cpu->irq_pending = false;
     cpu->opcode = 0x101; // IRQ sentinel (not a real opcode)
     cpu->phase = 0;
@@ -2568,6 +2498,7 @@ void sb_6502_reset(sb_6502_t* cpu, sb_bus_t* bus) {
   cpu->cycles = 0;
   cpu->nmi_pending = false;
   cpu->irq_pending = false;
+  cpu->irq_delay_next = false;
   // Zero cycle-interleave state (from c-defensive: NULL/zero-init all state)
   cpu->opcode = 0;
   cpu->phase = 0;

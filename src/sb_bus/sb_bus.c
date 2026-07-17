@@ -1,6 +1,7 @@
 #include "sb_bus.h"
 #include "../sb_cartridge/sb_cartridge.h"
 #include "../sb_ppu/sb_ppu.h"
+#include "../sb_nes.h"
 
 uint8_t sb_bus_read(sb_bus_t* bus, uint16_t addr) {
   // split into 8KB regions
@@ -18,6 +19,10 @@ uint8_t sb_bus_read(sb_bus_t* bus, uint16_t addr) {
 
   case 2: // $4000-$5FFF: APU + I/O registers
     if (addr < 0x4020) {
+      // APU status ($4015)
+      if (addr == 0x4015) {
+        bus->last_read = sb_apu_read(bus->apu, addr);
+      } else
       // Controller port 1 ($4016)
       if (addr == 0x4016) {
         if (bus->controller_strobe) {
@@ -79,6 +84,8 @@ uint8_t sb_bus_write(sb_bus_t* bus, uint16_t addr, uint8_t val) {
     if (addr == 0x4014) {
       if (bus->ppu)
         sb_ppu_oam_dma_start(bus->ppu, val);
+    } else if (addr == 0x4017) {
+      sb_apu_write(bus->apu, addr, val);
     } else if (addr == 0x4016) {
       // Strobe: writing bit0=1 resets index and keeps strobe active
       // writing bit0=0 ends strobe, allowing reads to advance

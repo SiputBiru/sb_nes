@@ -17,7 +17,7 @@ sb_blargg_result_t sb_blargg_run(const sb_blargg_config_t* config) {
   uint64_t start_cycles = nes.cpu.cycles;
   int cpu_subcycle = 0;
 
-  // Run cycle-interleaved loop
+  // Run cycle-interleaved loop (mirrors sb_nes_frame() logic — keep in sync!)
   while (nes.cpu.cycles - start_cycles < max_cycles) {
     // Tick PPU
     sb_ppu_tick(&nes.ppu);
@@ -25,6 +25,9 @@ sb_blargg_result_t sb_blargg_run(const sb_blargg_config_t* config) {
     // CPU advances 1 cycle every 3 PPU dots
     if (++cpu_subcycle == 3) {
       cpu_subcycle = 0;
+
+      // Tick APU frame counter (once per CPU cycle slot, even during DMA).
+      sb_apu_frame_tick(&nes.apu);
 
       if (nes.ppu.dma_active) {
         // DMA steals the CPU cycle
@@ -47,15 +50,22 @@ sb_blargg_result_t sb_blargg_run(const sb_blargg_config_t* config) {
         // Increment cycles manually because CPU is halted
         nes.cpu.cycles++;
       } else {
-        if (nes.ppu.nmi_pending) {
+        // Bridge APU IRQ to CPU (sb_6502_irq checks I flag).
+        if (nes.apu.frame_irq_pending) {
+          sb_6502_irq(&nes.cpu, &nes.bus);
+        }
+
+        int rc = sb_6502_cycle(&nes.cpu, &nes.bus);
+
+        // NMI bridge at INSTRUCTION BOUNDARY only.
+        if ((rc == SB_OK || rc < 0) && nes.ppu.nmi_pending) {
           nes.ppu.nmi_pending = false;
           sb_6502_nmi(&nes.cpu, &nes.bus);
         }
-        sb_6502_cycle(&nes.cpu, &nes.bus);
       }
     }
 
-    // Periodically check test status (every 60000 PPU ticks = 20000 CPU cycles)
+    // Periodically check test status (every 20000 CPU cycles)
     if (cpu_subcycle == 0 && nes.cpu.cycles % 20000 == 0) {
       uint8_t status = nes.cartridge.prg_ram[0];
       if (status != 0 && status != 0x80) {

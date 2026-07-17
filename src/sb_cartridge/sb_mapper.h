@@ -33,8 +33,8 @@ typedef struct sb_mapper_t {
   // Cartridge properties (parsed from iNES header, cached here for mappers).
   uint8_t mapper_id;
 
-  // true: $C000-$FFFF mirrors $8000-$BFFF (16KB PRG)
-  // false: $C000-$FFFF is the second 16KB (32KB PRG)
+  // Nametable mirroring mode (horizontal, vertical, or four-screen).
+  // Used by PPU address translation via ppu_real_addr().
   sb_mirroring_t mirroring;
   bool chr_ram;
 
@@ -58,8 +58,8 @@ typedef struct sb_mapper_t {
   sb_mapper_on_scanline_fn on_scanline; // Called each scanline (MMC3 IRQ)
   sb_mapper_reset_fn reset;             // Called on mapper reset
 
-  // Mapper-specific state. each mapper's init function allocate this.
-  // Freed by sb_cartridge is unloaded
+  // Mapper-specific state. Each mapper's init function allocates this.
+  // Freed by sb_cartridge when the cartridge is unloaded.
   void* extension;
 } sb_mapper_t;
 

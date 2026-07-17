@@ -8,7 +8,7 @@
 #include "../sb_bus/sb_bus.h"
 
 // Error codes (returned by sb_6502_cycle and cycle handlers)
-#define SB_OK 0          // instruction complete
+#define SB_OK 0          // phase sequence complete (instruction, interrupt, or fetch done)
 #define SB_IN_PROGRESS 1 // more phases remain, call again
 #define SB_ERR_CPU (-1)
 #define SB_ERR_BUS (-2)
@@ -34,9 +34,9 @@
 #define SB_6502_OVERFLOW (1 << 6)
 #define SB_6502_NEGATIVE (1 << 7)
 
-// Forward declaration of the cycle-handler function type.
-// Each phase of an instruction's execution is one call to a cycle handler.
-// Returns SB_OK when the instruction completes, negative on error.
+// Cycle-handler function type. Each phase of execution (instruction or interrupt)
+// is one call to a cycle handler. Returns SB_OK when the phase sequence completes,
+// SB_IN_PROGRESS for more phases, negative on error.
 struct sb_6502_t;
 typedef int (*sb_6502_cycle_fn)(struct sb_6502_t* cpu, sb_bus_t* bus);
 
@@ -57,6 +57,13 @@ typedef struct sb_6502_t {
   // interrupt state
   bool nmi_pending;
   bool irq_pending;
+
+  // 6502 one-instruction delay for I flag changes.
+  // After CLI/SEI/PLP/RTI, the I flag change takes effect one instruction
+  // later. irq_delay_next = true means the next fetch uses the SAVED I flag
+  // (the value before the change). After the fetch, the new I flag applies.
+  bool irq_delay_next;
+  bool i_flag_saved; // saved I flag value (before the change)
 
   sb_6502_result_t result;
 
@@ -83,7 +90,10 @@ typedef struct {
 
 typedef void (*sb_6502_op_fn)(sb_6502_t* cpu, sb_bus_t* bus, uint8_t value);
 
-sb_6502_result_t addr_immediate(sb_6502_t* cpu, sb_bus_t* bus);   // Implicit (no addr fetch)
+sb_6502_result_t addr_immediate(
+  sb_6502_t* cpu,
+  sb_bus_t* bus
+); // Immediate: returns PC of operand byte, caller must bus_read()
 sb_6502_result_t addr_zero_page(sb_6502_t* cpu, sb_bus_t* bus);   // Single byte addr
 sb_6502_result_t addr_zero_page_x(sb_6502_t* cpu, sb_bus_t* bus); // (zp + X) & 0xFF
 sb_6502_result_t addr_zero_page_y(sb_6502_t* cpu, sb_bus_t* bus);
@@ -100,7 +110,10 @@ sb_6502_result_t addr_implied(sb_6502_t* cpu, sb_bus_t* bus); // CLC, INX, TAX
 sb_6502_result_t addr_accumulator(sb_6502_t* cpu, sb_bus_t* bus); // ASL A, ROL A, etc.
 
 void sb_6502_init_opcodes(void);
-void sb_6502_step(sb_6502_t* cpu, sb_bus_t* bus);
+void sb_6502_step(
+  sb_6502_t* cpu,
+  sb_bus_t* bus
+); // DEPRECATED: use sb_6502_cycle for cycle-interleaved execution
 int sb_6502_cycle(sb_6502_t* cpu, sb_bus_t* bus);
 void sb_6502_reset(sb_6502_t* cpu, sb_bus_t* bus);
 void sb_6502_nmi(sb_6502_t* cpu, sb_bus_t* bus);

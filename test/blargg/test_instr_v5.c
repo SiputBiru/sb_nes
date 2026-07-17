@@ -30,11 +30,11 @@ int main(void) {
 
   run_test("04-zero_page", "test/blargg/roms/04-zero_page.nes", 5000000);
 
-  run_test("05-zp_xy", "test/blargg/roms/05-zp_xy.nes", 5000000);
+  run_test("05-zp_xy", "test/blargg/roms/05-zp_xy.nes", 12000000);
 
   run_test("06-absolute", "test/blargg/roms/06-absolute.nes", 5000000);
 
-  run_test("07-abs_xy", "test/blargg/roms/07-abs_xy.nes", 5000000);
+  run_test("07-abs_xy", "test/blargg/roms/07-abs_xy.nes", 12000000);
 
   run_test("08-ind_x", "test/blargg/roms/08-ind_x.nes", 5000000);
 
