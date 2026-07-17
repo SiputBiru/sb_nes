@@ -1,9 +1,9 @@
 #include "sb_6502.h"
 
-// LDA #$42 (no addr fetch)
+// LDA #$42 (Immediate: returns PC of operand byte, caller must bus_read())
 sb_6502_result_t addr_immediate(sb_6502_t* cpu, sb_bus_t* bus) {
-  // because the operand byte is right after the opcode in memory. just return
-  // its address (poiting into ROM) and advance PC past it. The calle need to do
+  // The operand byte is right after the opcode in memory. Return
+  // its address (pointing into ROM) and advance PC past it. The caller needs to
   // bus_read(bus, r.addr) to get the actual value 0x42.
   sb_6502_result_t r = { .addr = cpu->pc++, .page_crossed = false };
   return r;
@@ -16,8 +16,8 @@ sb_6502_result_t addr_zero_page(sb_6502_t* cpu, sb_bus_t* bus) {
   r.addr = sb_bus_read(bus, cpu->pc++); // read 1 byte, advance PC
   r.page_crossed = false;
 
-  // r.addr will be 0x00-0xFF after masking by the bust read (through it
-  // natrually returns around 0-255).
+  // r.addr will be 0x00-0xFF after the 8-bit bus read (though it
+  // naturally returns around 0-255).
   return r;
 }
 
@@ -26,7 +26,7 @@ sb_6502_result_t addr_zero_page_x(sb_6502_t* cpu, sb_bus_t* bus) {
   sb_6502_result_t r = { 0 };
 
   uint8_t base = sb_bus_read(bus, cpu->pc++);
-  // if base = 0xFF and X-0x01 the address is 0x00 not 0x0100
+  // if base = 0xFF and X = 0x01, the address is 0x00 not 0x0100
   r.addr = (base + cpu->x) & 0x00FF;
   r.page_crossed = false;
 
@@ -134,9 +134,8 @@ sb_6502_result_t addr_relative(sb_6502_t* cpu, sb_bus_t* bus) {
 
   int8_t offset = (int8_t)sb_bus_read(bus, cpu->pc);
   cpu->pc++; // no ++ in the read to keep it clean
-             // the target address = PC + offset, but the cycle penalty depends
-             // on whetere the branch crosses a page. will be handle the PC
-             // update in the branch logic.
+             // The target address = PC + offset, but the cycle penalty depends
+             // on whether the branch crosses a page. Cycle handler updates PC.
 
   r.addr = cpu->pc + offset;
   r.page_crossed = (cpu->pc & 0xFF00) != (r.addr & 0xFF00);
@@ -150,7 +149,7 @@ sb_6502_result_t addr_implied(sb_6502_t* cpu, sb_bus_t* bus) {
   return r;
 }
 
-// ASL A, ROL A, stc. (opeate on A register directly)
+// ASL A, ROL A, etc. (operate on A register directly)
 sb_6502_result_t addr_accumulator(sb_6502_t* cpu, sb_bus_t* bus) {
   sb_6502_result_t r = { .addr = 0, .page_crossed = false };
   return r;

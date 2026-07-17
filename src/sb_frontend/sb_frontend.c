@@ -35,8 +35,7 @@ static uint8_t read_controller(void) {
   return btns;
 }
 
-// Render
-// Converts PPU framebuffer palette indices to RGB and blits via SDL texture.
+// Render: convert PPU framebuffer palette indices to RGB and blit via SDL texture.
 
 static void render_frame(SDL_Renderer* renderer, sb_nes_t* nes, int scale) {
   static SDL_Texture* texture = NULL;
@@ -114,7 +113,7 @@ int sb_frontend_run(sb_nes_t* nes, sb_frontend_config_t* config) {
     // Render
     render_frame(renderer, nes, config->window_scale);
 
-    // ~60 FPS cap
+    // ~62.5 FPS cap (SDL_Delay(16) approximates 60 FPS; actual rate depends on frame compute time)
     SDL_Delay(16);
   }
 

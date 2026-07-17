@@ -1,6 +1,49 @@
 #include "sb_nes.h"
 #include <stdio.h>
 #include <string.h>
+
+void sb_apu_frame_tick(sb_apu_t* apu) {
+  if (!apu || !apu->frame_irq_enabled) return;
+
+  apu->frame_divider++;
+  if (apu->frame_divider >= SB_APU_FRAME_DIVIDER_NTSC) {
+    apu->frame_divider = 0;
+    apu->frame_step++;
+    int max_step = apu->frame_5step ? 5 : 4;
+    if (apu->frame_step >= max_step) {
+      apu->frame_step = 0;
+      if (!apu->frame_5step) {
+        // 4-step mode: IRQ fires at step 3→0 wrap
+        apu->frame_irq_pending = true;
+      }
+    }
+  }
+}
+
+uint8_t sb_apu_read(sb_apu_t* apu, uint16_t addr) {
+  if (addr == 0x4015) {
+    uint8_t status = 0;
+    if (apu && apu->frame_irq_pending)
+      status |= 0x40; // bit6 = frame IRQ pending
+    if (apu)
+      apu->frame_irq_pending = false; // cleared on read
+    return status;
+  }
+  return 0; // other APU reads not implemented
+}
+
+void sb_apu_write(sb_apu_t* apu, uint16_t addr, uint8_t val) {
+  if (addr == 0x4017) {
+    if (!apu) return;
+    // $4017 write: reset frame counter, clear IRQ, set mode
+    apu->frame_irq_pending = false;
+    apu->frame_divider = 0;
+    apu->frame_step = 0;
+    apu->frame_5step = (val & 0x80) != 0;
+    apu->frame_irq_enabled = !apu->frame_5step;
+  }
+}
+
 void sb_nes_init(sb_nes_t* nes) {
 
   memset(nes, 0, sizeof(*nes));
@@ -10,6 +53,9 @@ void sb_nes_init(sb_nes_t* nes) {
 
   // Wire the PPU into the bus
   nes->bus.ppu = &nes->ppu;
+
+  // Wire the APU into the bus
+  nes->bus.apu = &nes->apu;
 
   // Init PPU with cartridge reference (for CHR reads)
   sb_ppu_init(&nes->ppu, &nes->cartridge);
@@ -77,9 +123,9 @@ bool sb_nes_load_rom(sb_nes_t* nes, const char* path) {
   return true;
 }
 
-// Process one DMA cycle (called every CPU-cycle slot during active DMA).
-// Real DMA takes 513+ cycles: 1 dummy + 256 reads + 256 writes.
-// Each byte requires 2 CPU cycles (read from CPU memory, write to PPU OAM).
+// Process one DMA sub-cycle (called once per CPU-cycle slot during active DMA).
+// Each byte transfer takes 2 sub-cycles (read + write).
+// Total: 1 dummy + 256 reads + 256 writes = 513 CPU cycles.
 static bool process_dma_cycle(sb_nes_t* nes) {
   if (!nes) return true;
 
@@ -116,7 +162,7 @@ void sb_nes_frame(sb_nes_t* nes) {
   // PPU ticks every dot (1.79 MHz x 3 = 5.37 MHz).
   // CPU advances ONE cycle every 3 PPU dots via sb_6502_cycle().
   // NMI/IRQ are checked inside sb_6502_cycle's fetch_opcode at instruction
-  // boundaries. DMA is cycle-stealed: one DMA step per CPU cycle slot.
+  // boundaries. DMA is cycle-stolen: one DMA sub-cycle per CPU cycle slot.
   //
   // sb_ppu_tick handles:
   //   dots 1-256:  render pixels (calls sb_ppu_render_pixel)
@@ -141,21 +187,28 @@ void sb_nes_frame(sb_nes_t* nes) {
       if (++nes->cpu_subcycle == 3) {
         nes->cpu_subcycle = 0;
 
+        // Tick APU frame counter (once per CPU cycle slot, even during DMA).
+        sb_apu_frame_tick(&nes->apu);
+
         // DMA steals the CPU cycle slot when active.
         if (nes->ppu.dma_active) {
           process_dma_cycle(nes);
         } else {
-          // Bridge NMI from PPU to CPU (checked at instruction boundaries
-          // inside sb_6502_cycle's fetch_opcode).
-          if (nes->ppu.nmi_pending) {
+          // Bridge APU IRQ to CPU (sb_6502_irq checks I flag).
+          if (nes->apu.frame_irq_pending) {
+            sb_6502_irq(&nes->cpu, &nes->bus);
+          }
+
+          // Advance CPU by one internal cycle.
+          int rc = sb_6502_cycle(&nes->cpu, &nes->bus);
+
+          // NMI bridge at INSTRUCTION BOUNDARY only.
+          // This ensures that reading $2002 (which clears VBlank) during an
+          // instruction prevents NMI from firing for that VBlank.
+          if ((rc == SB_OK || rc < 0) && nes->ppu.nmi_pending) {
             nes->ppu.nmi_pending = false;
             sb_6502_nmi(&nes->cpu, &nes->bus);
           }
-          // Advance CPU by one internal cycle.
-          // The cycle handler manages instruction phases internally;
-          // sb_6502_cycle returns SB_OK when an instruction completes
-          // and automatically starts the next via fetch_opcode.
-          sb_6502_cycle(&nes->cpu, &nes->bus);
         }
       }
     }

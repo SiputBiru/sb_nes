@@ -75,10 +75,10 @@ typedef struct sb_ppu_t {
   uint8_t oam_cache[8];  // Sprite indices on current scanline (max 8)
   uint8_t oam_cache_len; // Number of sprites on current scanline
 
-  uint8_t spr_low[8];  // pre-feched pattern low byte
-  uint8_t spr_high[8]; // pre-feched pattern high byte
+  uint8_t spr_low[8];  // pre-fetched pattern low byte
+  uint8_t spr_high[8]; // pre-fetched pattern high byte
   uint8_t spr_x[8];    // Screen x position
-  uint8_t spr_pal[8];  // Pallete ID (attr & 0x03)
+  uint8_t spr_pal[8];  // Palette ID (attr & 0x03)
   bool spr_behind[8];  // Behind BG flag
   bool spr_hflip[8];   // Horizontal flip flag
 
@@ -100,7 +100,7 @@ typedef struct sb_ppu_t {
   uint8_t dma_page;
   uint8_t dma_offset;
   bool dma_dummy;
-  bool dma_write;  // false = read cycle, true = write cycle
+  bool dma_write;    // false = read cycle, true = write cycle
   uint8_t dma_value; // byte read during read cycle, written during write cycle
 
   struct sb_cartridge_t* cartridge;
@@ -130,7 +130,7 @@ uint8_t sb_ppu_vram_read(sb_ppu_t* ppu, uint16_t addr);
 void sb_ppu_vram_write(sb_ppu_t* ppu, uint16_t addr, uint8_t val);
 
 // Apply NES palette mirroring: $3F10/$3F14/$3F18/$3F1C map to
-// $3F00/$3F04/$3F08/$3F0C. Input is a 5-bit palette index (0-31).
-uint8_t ppu_mirror_palette_idx(uint8_t addr);
+// $3F00/$3F04/$3F08/$3F0C. Input is a palette address' lower 5 bits (0-31).
+uint8_t ppu_mirror_palette_idx(uint8_t idx);
 
 #endif
