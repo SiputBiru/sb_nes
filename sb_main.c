@@ -20,13 +20,11 @@ int main(int argc, char** argv) {
   sb_nes_t nes;
   sb_nes_init(&nes);
 
-  sb_frontend_config_t config = {
-    .window_scale = 3,
-    .rom_path = NULL,
-  };
+  sb_frontend_config_t fe_config;
+  sb_frontend_init(&fe_config);
 
   for (int i = 1; i < argc; i++) {
-    if (strcmp(argv[i], "--help") == 0) {
+    if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
       print_usage(argv[0]);
       return 0;
     } else if (strcmp(argv[i], "--scale") == 0 && i + 1 < argc) {
@@ -35,16 +33,18 @@ int main(int argc, char** argv) {
         s = 1;
       if (s > 4)
         s = 4;
-      config.window_scale = s;
+      fe_config.window_scale = s;
     } else if (argv[i][0] != '-') {
-      config.rom_path = argv[i];
+      fe_config.rom_path = argv[i];
     }
   }
 
-  if (!config.rom_path) {
+  if (!fe_config.rom_path) {
     print_usage(argv[0]);
     return 1;
   }
 
-  return sb_frontend_run(&nes, &config);
+  sb_frontend_run(&nes, &fe_config);
+
+  return 0;
 }

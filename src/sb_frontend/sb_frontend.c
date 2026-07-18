@@ -25,6 +25,12 @@ static const struct {
   { SDL_SCANCODE_SPACE, BTN_SELECT }, { SDL_SCANCODE_RETURN, BTN_START },
 };
 
+void sb_frontend_init(sb_frontend_config_t* config) {
+  config->window_scale = 3;
+  config->rom_path = NULL;
+  config->frame_delay = 16;
+}
+
 static uint8_t read_controller(void) {
   const bool* keys = SDL_GetKeyboardState(NULL);
   uint8_t btns = 0;
@@ -58,11 +64,11 @@ static void render_frame(SDL_Renderer* renderer, sb_nes_t* nes, int scale) {
   SDL_RenderPresent(renderer);
 }
 
-int sb_frontend_run(sb_nes_t* nes, sb_frontend_config_t* config) {
+void sb_frontend_run(sb_nes_t* nes, sb_frontend_config_t* config) {
   // Init SDL3
   if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS)) {
     fprintf(stderr, "SDL_Init error: %s\n", SDL_GetError());
-    return 1;
+    return;
   }
 
   int w = 256 * config->window_scale;
@@ -74,7 +80,7 @@ int sb_frontend_run(sb_nes_t* nes, sb_frontend_config_t* config) {
   if (!window) {
     fprintf(stderr, "SDL_CreateWindow error: %s\n", SDL_GetError());
     SDL_Quit();
-    return 1;
+    return;
   }
 
   SDL_Renderer* renderer = SDL_CreateRenderer(window, NULL);
@@ -82,14 +88,14 @@ int sb_frontend_run(sb_nes_t* nes, sb_frontend_config_t* config) {
     fprintf(stderr, "SDL_CreateRenderer error: %s\n", SDL_GetError());
     SDL_DestroyWindow(window);
     SDL_Quit();
-    return 1;
+    return;
   }
 
   if (!sb_nes_load_rom(nes, config->rom_path)) {
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
     SDL_Quit();
-    return 1;
+    return;
   }
 
   // Main Loop
@@ -114,12 +120,12 @@ int sb_frontend_run(sb_nes_t* nes, sb_frontend_config_t* config) {
     render_frame(renderer, nes, config->window_scale);
 
     // ~62.5 FPS cap (SDL_Delay(16) approximates 60 FPS; actual rate depends on frame compute time)
-    SDL_Delay(16);
+    SDL_Delay(config->frame_delay);
   }
 
   // Cleanup
   SDL_DestroyRenderer(renderer);
   SDL_DestroyWindow(window);
   SDL_Quit();
-  return 0;
+  return;
 }
