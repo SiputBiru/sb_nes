@@ -6,13 +6,25 @@
 #define TEST_FOLDER "test/"
 
 // Common flags (no -Wconversion — too noisy for C99 integer promotion)
-#define CFLAGS \
-  "-std=c99", "-Wall", "-Wextra", "-Wpedantic", "-Wshadow", "-Wno-unused-parameter", "-g", "-O0"
-
-// Flags for test builds (include sanitizers — no SDL linked here)
-#define CFLAGS_TEST \
-  "-std=c99", "-Wall", "-Wextra", "-Wpedantic", "-Wshadow", "-Wno-unused-parameter", \
-    "-fsanitize=address", "-fsanitize=undefined", "-g", "-O0"
+#if !defined(_MSC_VER)
+  #define CFLAGS \
+    "-std=c99", "-Wall", "-Wextra", "-Wpedantic", "-Wshadow", "-Wno-unused-parameter", "-g", "-O0"
+  // Flags for test builds (include sanitizers — no SDL linked here)
+  #define CFLAGS_TEST \
+    "-std=c99", "-Wall", "-Wextra", "-Wpedantic", "-Wshadow", "-Wno-unused-parameter", \
+      "-fsanitize=address", "-fsanitize=undefined", "-g", "-O0"
+  #define SDL_LIBS "-lSDL3"
+  #define EXE_SUFFIX ""
+#else
+  // MSVC flags (/std:c11 is the closest to C99; /WX = treat warnings as errors)
+  #define CFLAGS \
+    "/std:c11", "/W3", "/WX", "/wd4100", "/wd4996", "/Zi", "/Od"
+  // MSVC test flags (no sanitizers; /RTC1 for basic runtime checks)
+  #define CFLAGS_TEST \
+    "/std:c11", "/W3", "/WX", "/wd4100", "/wd4996", "/RTC1", "/Zi", "/Od"
+  #define SDL_LIBS "SDL3.lib"
+  #define EXE_SUFFIX ".exe"
+#endif
 
 // All core source files needed to link a test binary
 #define CORE_SOURCES \
@@ -109,7 +121,7 @@ static int build_nestest(char* last_line, int last_line_size) {
   Nob_Cmd cmd = { 0 };
   nob_cmd_append(&cmd, CORE_SOURCES);
   nob_cmd_append(&cmd, TEST_FOLDER "nestest/test_nestest.c");
-  return build_and_run_capture(&cmd, BUILD_FOLDER "test_nestest", NULL, last_line, last_line_size);
+  return build_and_run_capture(&cmd, BUILD_FOLDER "test_nestest" EXE_SUFFIX, NULL, last_line, last_line_size);
 }
 
 static int build_cartridge_test(void) {
@@ -117,7 +129,7 @@ static int build_cartridge_test(void) {
   nob_cmd_append(&cmd, SRC_FOLDER "sb_cartridge/sb_cartridge.c");
   nob_cmd_append(&cmd, SRC_FOLDER "sb_cartridge/sb_mapper_nrom.c");
   nob_cmd_append(&cmd, TEST_FOLDER "cartridge/test_cartridge.c");
-  return build_and_run(&cmd, BUILD_FOLDER "test_cartridge", NULL);
+  return build_and_run(&cmd, BUILD_FOLDER "test_cartridge" EXE_SUFFIX, NULL);
 }
 
 static int build_blargg_test(
@@ -132,7 +144,7 @@ static int build_blargg_test(
   nob_cmd_append(&cmd, test_file);
 
   char output[256];
-  snprintf(output, sizeof(output), BUILD_FOLDER "%s", test_name);
+  snprintf(output, sizeof(output), BUILD_FOLDER "%s" EXE_SUFFIX, test_name);
   return build_and_run_capture(&cmd, output, NULL, last_line, last_line_size);
 }
 
@@ -146,9 +158,8 @@ static int build_emulator(void) {
   nob_cc(&front);
   nob_cc_flags(&front);
   nob_cmd_append(&front, CFLAGS);
-  // nob_cmd_append(&front, "-I/usr/include/SDL3", "-lSDL3");
-  nob_cmd_append(&front, "-lSDL3");
-  nob_cc_output(&front, BUILD_FOLDER "sb_nes");
+  nob_cmd_append(&front, SDL_LIBS);
+  nob_cc_output(&front, BUILD_FOLDER "sb_nes" EXE_SUFFIX);
   for (int i = 0; i < cmd.count; i++)
     nob_cmd_append(&front, cmd.items[i]);
   cmd = front;
