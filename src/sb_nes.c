@@ -87,7 +87,7 @@ bool sb_nes_load_rom(sb_nes_t* nes, const char* path) {
   case SB_CARTRIDGE_ERR_UNSUPPORTED_MAPPER:
     fprintf(
       stderr,
-      "Error: '%s' uses mapper %d (only NROM/mapper 0 supported)\n",
+      "Error: '%s' uses mapper %d (only NROM 0 and UxROM 2 supported)\n",
       path,
       nes->cartridge.mapper.mapper_id
     );

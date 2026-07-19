@@ -35,14 +35,16 @@ static uint16_t ppu_real_addr(sb_ppu_t* ppu, uint16_t addr) {
     if (ppu->cartridge) {
       switch (ppu->cartridge->mapper.mirroring) {
       case SB_MIRROR_VERTICAL:
-        // NT0/NT1 → page 0, NT2/NT3 → page 1
-        // Two unique pages arranged vertically (good for horizontal scrolling)
+        // PPU A10 → VRAM A10 (bit 10 selects page)
+        // NT0→page0, NT1→page1, NT2→page0 (mirror), NT3→page1 (mirror)
+        // Two unique pages side by side (good for horizontal scrolling)
         if (addr >= 0x800)
           addr -= 0x800;
         break;
       case SB_MIRROR_HORIZONTAL:
-        // NT0/NT2 → page 0, NT1/NT3 → page 1
-        // Two unique pages arranged horizontally (good for vertical scrolling)
+        // PPU A11 → VRAM A10 (bit 11 selects page)
+        // NT0→page0, NT1→page0 (mirror), NT2→page1, NT3→page1 (mirror)
+        // Two unique pages stacked vertically (good for vertical scrolling)
         if (addr >= 0x400 && addr < 0x800)
           addr -= 0x400;
         else if (addr >= 0x800) {

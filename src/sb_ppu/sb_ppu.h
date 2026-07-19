@@ -51,9 +51,6 @@ typedef struct sb_ppu_t {
   uint8_t ppumask;
   uint8_t ppustatus;
   uint8_t oamaddr;
-  uint8_t oamdata;
-  uint8_t ppuscroll;
-  uint8_t ppuaddr;
   uint8_t ppudata;
 
   // Internal PPU state
