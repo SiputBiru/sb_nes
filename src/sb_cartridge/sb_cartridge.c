@@ -99,7 +99,9 @@ sb_cartridge_result_t sb_cartridge_load(sb_cartridge_t* cart, const uint8_t* dat
     sb_mapper_nrom_init(&cart->mapper);
     break;
     // TODO: case 1 (sb_mapper_mmc1_init)
-    // TODO: case 2 (sb_mapper_uxrom_init)
+  case 2:
+    sb_mapper_uxrom_init(&cart->mapper);
+    break;
   default:
     return SB_CARTRIDGE_ERR_UNSUPPORTED_MAPPER;
   }

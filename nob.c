@@ -7,30 +7,29 @@
 
 // Common flags (no -Wconversion — too noisy for C99 integer promotion)
 #if !defined(_MSC_VER)
-  #define CFLAGS \
-    "-std=c99", "-Wall", "-Wextra", "-Wpedantic", "-Wshadow", "-Wno-unused-parameter", "-g", "-O0"
-  // Flags for test builds (include sanitizers — no SDL linked here)
-  #define CFLAGS_TEST \
-    "-std=c99", "-Wall", "-Wextra", "-Wpedantic", "-Wshadow", "-Wno-unused-parameter", \
-      "-fsanitize=address", "-fsanitize=undefined", "-g", "-O0"
-  #define SDL_LIBS "-lSDL3"
-  #define EXE_SUFFIX ""
+#define CFLAGS \
+  "-std=c99", "-Wall", "-Wextra", "-Wpedantic", "-Wshadow", "-Wno-unused-parameter", "-g", "-O0"
+// Flags for test builds (include sanitizers — no SDL linked here)
+#define CFLAGS_TEST \
+  "-std=c99", "-Wall", "-Wextra", "-Wpedantic", "-Wshadow", "-Wno-unused-parameter", \
+    "-fsanitize=address", "-fsanitize=undefined", "-g", "-O0"
+#define SDL_LIBS "-lSDL3"
+#define EXE_SUFFIX ""
 #else
-  // MSVC flags (/std:c11 is the closest to C99; /WX = treat warnings as errors)
-  #define CFLAGS \
-    "/std:c11", "/W3", "/WX", "/wd4100", "/wd4996", "/Zi", "/Od"
-  // MSVC test flags (no sanitizers; /RTC1 for basic runtime checks)
-  #define CFLAGS_TEST \
-    "/std:c11", "/W3", "/WX", "/wd4100", "/wd4996", "/RTC1", "/Zi", "/Od"
-  #define SDL_LIBS "SDL3.lib"
-  #define EXE_SUFFIX ".exe"
+// MSVC flags (/std:c11 is the closest to C99; /WX = treat warnings as errors)
+#define CFLAGS "/std:c11", "/W3", "/WX", "/wd4100", "/wd4996", "/Zi", "/Od"
+// MSVC test flags (no sanitizers; /RTC1 for basic runtime checks)
+#define CFLAGS_TEST "/std:c11", "/W3", "/WX", "/wd4100", "/wd4996", "/RTC1", "/Zi", "/Od"
+#define SDL_LIBS "SDL3.lib"
+#define EXE_SUFFIX ".exe"
 #endif
 
 // All core source files needed to link a test binary
 #define CORE_SOURCES \
   SRC_FOLDER "sb_6502/sb_6502.c", SRC_FOLDER "sb_bus/sb_bus.c", \
     SRC_FOLDER "sb_cartridge/sb_cartridge.c", SRC_FOLDER "sb_cartridge/sb_mapper_nrom.c", \
-    SRC_FOLDER "sb_nes.c", SRC_FOLDER "sb_ppu/sb_ppu.c", SRC_FOLDER "sb_ppu/sb_ppu_render.c"
+    SRC_FOLDER "sb_cartridge/sb_mapper_uxrom.c", SRC_FOLDER "sb_nes.c", \
+    SRC_FOLDER "sb_ppu/sb_ppu.c", SRC_FOLDER "sb_ppu/sb_ppu_render.c"
 
 static int build_and_run(Nob_Cmd* cmd, const char* output, const char* extra_flags) {
   // Build: insert compiler, flags, and extra flags at the front
@@ -121,13 +120,20 @@ static int build_nestest(char* last_line, int last_line_size) {
   Nob_Cmd cmd = { 0 };
   nob_cmd_append(&cmd, CORE_SOURCES);
   nob_cmd_append(&cmd, TEST_FOLDER "nestest/test_nestest.c");
-  return build_and_run_capture(&cmd, BUILD_FOLDER "test_nestest" EXE_SUFFIX, NULL, last_line, last_line_size);
+  return build_and_run_capture(
+    &cmd,
+    BUILD_FOLDER "test_nestest" EXE_SUFFIX,
+    NULL,
+    last_line,
+    last_line_size
+  );
 }
 
 static int build_cartridge_test(void) {
   Nob_Cmd cmd = { 0 };
   nob_cmd_append(&cmd, SRC_FOLDER "sb_cartridge/sb_cartridge.c");
   nob_cmd_append(&cmd, SRC_FOLDER "sb_cartridge/sb_mapper_nrom.c");
+  nob_cmd_append(&cmd, SRC_FOLDER "sb_cartridge/sb_mapper_uxrom.c");
   nob_cmd_append(&cmd, TEST_FOLDER "cartridge/test_cartridge.c");
   return build_and_run(&cmd, BUILD_FOLDER "test_cartridge" EXE_SUFFIX, NULL);
 }
@@ -169,7 +175,8 @@ static int build_emulator(void) {
   return 0;
 }
 
-static int build_mingw_ex(const char* output_name, const char* frontend_src, const char* extra_libs) {
+static int
+build_mingw_ex(const char* output_name, const char* frontend_src, const char* extra_libs) {
   Nob_Cmd cmd = { 0 };
   nob_cmd_append(&cmd, CORE_SOURCES);
   nob_cmd_append(&cmd, frontend_src);
@@ -179,8 +186,13 @@ static int build_mingw_ex(const char* output_name, const char* frontend_src, con
   nob_cmd_append(&front, "x86_64-w64-mingw32-gcc");
   nob_cmd_append(
     &front,
-    "-std=c99", "-Wall", "-Wextra", "-Wpedantic",
-    "-Wshadow", "-Wno-unused-parameter", "-O2"
+    "-std=c99",
+    "-Wall",
+    "-Wextra",
+    "-Wpedantic",
+    "-Wshadow",
+    "-Wno-unused-parameter",
+    "-O2"
   );
   nob_cmd_append(&front, "-I/usr/x86_64-w64-mingw32/include");
 
@@ -196,9 +208,20 @@ static int build_mingw_ex(const char* output_name, const char* frontend_src, con
   nob_cmd_append(&front, "-mwindows");
   nob_cmd_append(
     &front,
-    "-lm", "-lkernel32", "-luser32", "-lgdi32", "-lwinmm", "-limm32",
-    "-lole32", "-loleaut32", "-lversion", "-luuid", "-ladvapi32",
-    "-lsetupapi", "-lshell32", "-ldinput8"
+    "-lm",
+    "-lkernel32",
+    "-luser32",
+    "-lgdi32",
+    "-lwinmm",
+    "-limm32",
+    "-lole32",
+    "-loleaut32",
+    "-lversion",
+    "-luuid",
+    "-ladvapi32",
+    "-lsetupapi",
+    "-lshell32",
+    "-ldinput8"
   );
   cmd = front;
 
