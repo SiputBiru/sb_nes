@@ -10,7 +10,7 @@ pacman:<br>
 
 <br>
 there is still no audio output stuff(APU).
-Currently supports only iNES format ROMs with mapper 0 (NROM). NES 2.0 format and all bank-switching mappers (MMC1, MMC3, etc.) are not yet implemented.
+Currently supports only iNES format ROMs with mapper 0 (NROM) and mapper 2 (UxROM). NES 2.0 format and all bank-switching mappers (MMC1, MMC3, etc.) are not yet implemented.
 
 deps: 
 - [SDL3](https://github.com/libsdl-org/SDL) (need to be installed manually)
@@ -19,7 +19,10 @@ deps:
 to build this project, `nob.c` need to be build first, then just run it
 ```bash
 cc ./nob.c -o nob
+```
 
+then run the nob
+```bash
 ./nob
 ```
 
