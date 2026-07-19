@@ -169,51 +169,53 @@ static int build_emulator(void) {
   return 0;
 }
 
-static int build_mingw(void) {
+static int build_mingw_ex(const char* output_name, const char* frontend_src, const char* extra_libs) {
   Nob_Cmd cmd = { 0 };
   nob_cmd_append(&cmd, CORE_SOURCES);
-  nob_cmd_append(&cmd, SRC_FOLDER "sb_frontend/sb_frontend.c");
+  nob_cmd_append(&cmd, frontend_src);
   nob_cmd_append(&cmd, "sb_main.c");
 
   Nob_Cmd front = { 0 };
   nob_cmd_append(&front, "x86_64-w64-mingw32-gcc");
   nob_cmd_append(
     &front,
-    "-std=c99",
-    "-Wall",
-    "-Wextra",
-    "-Wpedantic",
-    "-Wshadow",
-    "-Wno-unused-parameter",
-    "-O2"
+    "-std=c99", "-Wall", "-Wextra", "-Wpedantic",
+    "-Wshadow", "-Wno-unused-parameter", "-O2"
   );
   nob_cmd_append(&front, "-I/usr/x86_64-w64-mingw32/include");
-  nob_cc_output(&front, BUILD_FOLDER "sb_nes.exe");
+
+  char output_path[256];
+  snprintf(output_path, sizeof(output_path), BUILD_FOLDER "%s", output_name);
+  nob_cc_output(&front, output_path);
+
   for (int i = 0; i < cmd.count; i++)
     nob_cmd_append(&front, cmd.items[i]);
   nob_cmd_append(&front, "-L/usr/x86_64-w64-mingw32/lib");
-  nob_cmd_append(&front, "-lSDL3", "-mwindows");
+  if (extra_libs && extra_libs[0])
+    nob_cmd_append(&front, extra_libs);
+  nob_cmd_append(&front, "-mwindows");
   nob_cmd_append(
     &front,
-    "-lm",
-    "-lkernel32",
-    "-luser32",
-    "-lgdi32",
-    "-lwinmm",
-    "-limm32",
-    "-lole32",
-    "-loleaut32",
-    "-lversion",
-    "-luuid",
-    "-ladvapi32",
-    "-lsetupapi",
-    "-lshell32",
-    "-ldinput8"
+    "-lm", "-lkernel32", "-luser32", "-lgdi32", "-lwinmm", "-limm32",
+    "-lole32", "-loleaut32", "-lversion", "-luuid", "-ladvapi32",
+    "-lsetupapi", "-lshell32", "-ldinput8"
   );
   cmd = front;
 
   if (!nob_cmd_run(&cmd))
     return 1;
+  return 0;
+}
+
+static int build_mingw(void) {
+  printf("Building sb_nes.exe (SDL3)...\n");
+  if (build_mingw_ex("sb_nes.exe", SRC_FOLDER "sb_frontend/sb_frontend.c", "-lSDL3"))
+    return 1;
+
+  printf("\nBuilding sb_nes_standalone.exe (Win32 GDI)...\n");
+  if (build_mingw_ex("sb_nes_standalone.exe", SRC_FOLDER "sb_frontend/sb_frontend_win32.c", ""))
+    return 1;
+
   return 0;
 }
 
