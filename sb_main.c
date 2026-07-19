@@ -1,10 +1,10 @@
 #include "src/sb_frontend/sb_frontend.h"
+#include <SDL3/SDL_stdinc.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 
 static void print_usage(const char* prog) {
-  printf("sb_nes — SiputBiru NES Emulator\n");
+  printf("sb_nes - SiputBiru NES Emulator\n");
   printf("Usage: %s [options] <rom.nes>\n\n", prog);
   printf("Options:\n");
   printf("  --scale N    Window scale factor (1-4, default: 3)\n");
@@ -35,13 +35,9 @@ int main(int argc, char** argv) {
         s = 4;
       fe_config.window_scale = s;
     } else if (argv[i][0] != '-') {
-      fe_config.rom_path = argv[i];
+      SDL_strlcpy(fe_config.rom_path, argv[i], sizeof(fe_config.rom_path));
+      fe_config.rom_path_set = true;
     }
-  }
-
-  if (!fe_config.rom_path) {
-    print_usage(argv[0]);
-    return 1;
   }
 
   sb_frontend_run(&nes, &fe_config);
